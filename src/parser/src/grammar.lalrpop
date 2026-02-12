@@ -1,0 +1,104 @@
+use std::str::FromStr;
+use crate::ast;
+use crate::tokens;
+use crate::Expression;
+
+grammar;
+
+pub Addition: ast::Expression = {
+    <l:Addition> <op:PlusMinusBinary> <r:Factor> => ast::Expression::new_binary_op(l, r, op),
+    Factor,
+};
+
+Factor: ast::Expression = {
+    <l:Factor> <op:FactorOp> <r:Term> => ast::Expression::new_binary_op(l, r, op),
+    RangeExpression,
+    Term,
+};
+
+Term: ast::Expression = {
+    <a: Atom> => ast::Expression::new_atom(a),
+};
+
+pub Atom: ast::Atom = {
+    <n:NumLiteral> => ast::Atom::NumberLiteral(n),
+    <b:BoolLiteral> => ast::Atom::BooleanLiteral(b),
+    <s:StrLiteral> => ast::Atom::StringLiteral(s),
+    <v:Variable> => v,
+    <g:GroupedExpression> => g,
+};
+
+GroupedExpression: ast::Atom = {
+     <op:OpenParen> <e: Expression> <cp:CloseParen> => ast::Atom::new_grouped_expression(ast::Group::new(op,e,cp)),
+};
+
+OpenBrace: tokens::GroupingOperator = {
+    <s: @L> "{" <e: @R> => tokens::GroupingOperator::OpenBrace(tokens::Position::new(s, e)),
+};
+
+CloseBrace: tokens::GroupingOperator = {
+    <s: @L> "}" <e: @R> => tokens::GroupingOperator::CloseBrace(tokens::Position::new(s, e)),
+};
+
+OpenParen: tokens::GroupingOperator = {
+    <s: @L> "(" <e: @R> => tokens::GroupingOperator::OpenParen(tokens::Position::new(s, e)),
+};
+
+CloseParen: tokens::GroupingOperator = {
+    <s: @L> ")" <e: @R> => tokens::GroupingOperator::CloseParen(tokens::Position::new(s, e)),
+};
+
+PlusMinusBinary: tokens::BinOp = {
+   <s: @L> "+" <e: @R> => tokens::BinOp::Plus(tokens::Position::new(s, e)),
+   <s: @L> "-" <e: @R> => tokens::BinOp::Minus(tokens::Position::new(s, e)),
+};
+
+
+FactorOp: tokens::BinOp = {
+   <s: @L> "*" <e: @R> => tokens::BinOp::Mul(tokens::Position::new(s, e)),
+   <s: @L> "/" <e: @R> => tokens::BinOp::Div(tokens::Position::new(s, e)),
+   <s: @L> "%" <e: @R> => tokens::BinOp::Mod(tokens::Position::new(s, e)),
+};
+
+NumLiteral: tokens::Literal = {
+   <s: @L> <v: r"[0-9]+"> <e: @R> => tokens::Literal::Number(
+        i32::from_str(v).unwrap(),
+        tokens::Position::new(s, e)
+    ),
+};
+
+BoolLiteral: tokens::Literal = {
+   <s: @L> "true" <e: @R> => tokens::Literal::Bool(true, tokens::Position::new(s, e)),
+   <s: @L> "false" <e: @R> => tokens::Literal::Bool(false, tokens::Position::new(s, e)),
+};
+
+StrLiteral: tokens::Literal = {
+   <s: @L> <v: r#""([^"\\]|\\.)*""#> <e: @R> => tokens::Literal::Str(
+        v[1..v.len()-1].to_string(),
+        tokens::Position::new(s, e)
+    ),
+};
+
+ComparisonOp: tokens::BinOp = {
+    <s: @L> "==" <e: @R> => tokens::BinOp::EqualEqual(tokens::Position::new(s, e)),
+    <s: @L> "!=" <e: @R> => tokens::BinOp::NotEqual(tokens::Position::new(s, e)),
+    <s: @L> "<" <e: @R>  => tokens::BinOp::Less(tokens::Position::new(s, e)),
+    <s: @L> "<=" <e: @R> => tokens::BinOp::LessEqual(tokens::Position::new(s, e)),
+    <s: @L> ">" <e: @R>  => tokens::BinOp::Greater(tokens::Position::new(s, e)),
+    <s: @L> ">=" <e: @R> => tokens::BinOp::GreaterEqual(tokens::Position::new(s, e)),
+};
+
+LogicalOp: tokens::BinOp = {
+    <s: @L> "&" <e: @R> => tokens::BinOp::AndAnd(tokens::Position::new(s, e)),
+    <s: @L> "|" <e: @R> => tokens::BinOp::OrOr(tokens::Position::new(s, e)),
+};
+
+UnaryOp: tokens::UnaryOp = {
+    <s: @L> "!" <e: @R> => tokens::UnaryOp::Not(tokens::Position::new(s, e)),
+    <s: @L> "-" <e: @R> => tokens::UnaryOp::Minus(tokens::Position::new(s, e)),
+}
+
+
+AssignDestructiveOperator: tokens::BinOp = {
+    <s: @L> ":=" <e: @R> => tokens::BinOp::Assign(tokens::Position::new(s, e)),
+};
