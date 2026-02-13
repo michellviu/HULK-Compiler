@@ -1,8 +1,8 @@
 use super::super::Visitable;
 use super::super::Visitor;
 use super::*;
-use crate::Atom;
-use crate::BinOp;
+use crate::ast::Atom;
+use crate::tokens::BinOp;
 use crate::tokens;
 
 #[derive(Debug,Clone)]

@@ -5,19 +5,23 @@ use crate::Expression;
 
 grammar;
 
+pub Expression: ast::Expression = {
+    Addition,
+};
+
 pub Addition: ast::Expression = {
     <l:Addition> <op:PlusMinusBinary> <r:Factor> => ast::Expression::new_binary_op(l, r, op),
     Factor,
 };
 
 Factor: ast::Expression = {
-    <l:Factor> <op:FactorOp> <r:Term> => ast::Expression::new_binary_op(l, r, op),
-    RangeExpression,
-    Term,
+    <l:Factor> <op:FactorOp> <r:Unary> => ast::Expression::new_binary_op(l, r, op),
+    Unary,
 };
 
-Term: ast::Expression = {
-    <a: Atom> => ast::Expression::new_atom(a),
+Unary: ast::Expression = {
+    <op:UnaryOp> <expr:Unary> => ast::Expression::new_unary_op(op, expr),
+    <a:Atom> => ast::Expression::new_atom(a),
 };
 
 pub Atom: ast::Atom = {
@@ -26,6 +30,10 @@ pub Atom: ast::Atom = {
     <s:StrLiteral> => ast::Atom::StringLiteral(s),
     <v:Variable> => v,
     <g:GroupedExpression> => g,
+};
+
+Variable: ast::Atom = {
+    <s: @L> <v: r"[a-zA-Z_][a-zA-Z0-9_]*"> <e: @R> => ast::Atom::new_identifier(s, e, v),
 };
 
 GroupedExpression: ast::Atom = {
@@ -89,15 +97,14 @@ ComparisonOp: tokens::BinOp = {
 };
 
 LogicalOp: tokens::BinOp = {
-    <s: @L> "&" <e: @R> => tokens::BinOp::AndAnd(tokens::Position::new(s, e)),
-    <s: @L> "|" <e: @R> => tokens::BinOp::OrOr(tokens::Position::new(s, e)),
+    <s: @L> "&&" <e: @R> => tokens::BinOp::AndAnd(tokens::Position::new(s, e)),
+    <s: @L> "||" <e: @R> => tokens::BinOp::OrOr(tokens::Position::new(s, e)),
 };
 
 UnaryOp: tokens::UnaryOp = {
     <s: @L> "!" <e: @R> => tokens::UnaryOp::Not(tokens::Position::new(s, e)),
     <s: @L> "-" <e: @R> => tokens::UnaryOp::Minus(tokens::Position::new(s, e)),
-}
-
+};
 
 AssignDestructiveOperator: tokens::BinOp = {
     <s: @L> ":=" <e: @R> => tokens::BinOp::Assign(tokens::Position::new(s, e)),

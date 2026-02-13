@@ -1,7 +1,7 @@
-use crate::ast::atoms::atom::Atom;
+use crate::{ast, tokens};
 use crate::ast::Expression;
-use crate::visitor::Visitable;
-use crate::visitor::Visitor;
+use crate::ast::visitor::Visitable;
+use crate::ast::visitor::Visitor;
 
 pub struct AstPrinterVisitor {
     pub indent: usize,

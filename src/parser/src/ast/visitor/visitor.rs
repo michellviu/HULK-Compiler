@@ -1,7 +1,6 @@
 use crate::ast;
 use crate::tokens;
-use crate::whilee;
-use crate::forr;
+
 pub trait Visitor {
     fn visit_expression(&mut self, expr: &ast::Expression);
     fn visit_atom(&mut self, atom: &ast::atoms::atom::Atom);

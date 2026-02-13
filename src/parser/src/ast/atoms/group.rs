@@ -1,7 +1,5 @@
 use super::super::Expression;
 use crate::tokens::GroupingOperator;
-use super::super::Visitable;
-use super::super::Visitor;
 
 #[derive(Debug,Clone)]
 pub struct Group{
@@ -22,11 +20,4 @@ impl Group {
             expression,
         }
     }
-}
-
-impl Visitable for Group {
-    fn accept<V: Visitor>(&self, visitor: &mut V) {
-        visitor.visit_group(self);
-    }
-    
 }

@@ -1,3 +1,4 @@
+use std::fmt;
 use super::position::Position;
 #[derive(Debug,Clone)]
 pub enum BinOp {

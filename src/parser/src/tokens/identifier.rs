@@ -1,6 +1,7 @@
+use std::fmt;
 use super::position::Position;
-use super::super::Visitable;
-use super::super::Visitor;
+use crate::ast::Visitable;
+use crate::ast::Visitor;
 #[derive(Debug)]
 #[derive(Clone)]
 pub struct Identifier {
