@@ -1,4 +1,5 @@
 use crate::ast::{Body, Param, Visitable, Visitor};
+use crate::tokens::Span;
 
 /// Method: `name(params) [: ReturnType] body`
 #[derive(Debug, Clone)]
@@ -7,6 +8,7 @@ pub struct Method {
     pub params: Vec<Param>,
     pub return_type: Option<String>,
     pub body: Body,
+    pub span: Span,
 }
 
 impl Visitable for Method {

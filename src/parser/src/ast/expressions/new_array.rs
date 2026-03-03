@@ -1,4 +1,5 @@
 use crate::ast::{Expression, Visitable, Visitor};
+use crate::tokens::Span;
 
 /// `new Type?[size] { id -> init_expr }?`
 #[derive(Debug, Clone)]
@@ -6,6 +7,7 @@ pub struct NewArray {
     pub type_name: Option<String>,
     pub size: Expression,
     pub init: Option<(String, Expression)>,
+    pub span: Span,
 }
 
 impl Visitable for NewArray {

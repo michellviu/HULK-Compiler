@@ -1,5 +1,4 @@
-#[derive(Copy, Clone)]
-#[derive(Debug)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct Position {
     pub start: usize,
     pub end: usize,
@@ -10,3 +9,7 @@ impl Position {
         Position { start, end }
     }
 }
+
+/// A source span covering a range of bytes in the input.
+/// Used on every AST node for error reporting.
+pub type Span = Position;

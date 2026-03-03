@@ -1,10 +1,12 @@
 use crate::ast::{Expression, Visitable, Visitor};
+use crate::tokens::Span;
 
 /// `expr.member`
 #[derive(Debug, Clone)]
 pub struct MemberAccess {
     pub object: Expression,
     pub member: String,
+    pub span: Span,
 }
 
 impl Visitable for MemberAccess {

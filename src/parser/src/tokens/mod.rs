@@ -11,3 +11,4 @@ pub use operator::UnaryOp;
 pub use operator::BinOp;
 pub use operator::GroupingOperator;
 pub use position::Position;
+pub use position::Span;

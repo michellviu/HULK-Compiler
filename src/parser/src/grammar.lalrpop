@@ -37,8 +37,8 @@ match {
 // ═══════════════════════════════════════════════════════════════════
 
 pub Program: ast::Program = {
-    <classes:ClassDecl*> <functions:FunctionDecl*> <entry:EntryExpr?> => {
-        ast::Program { classes, functions, entry }
+    <s:@L> <classes:ClassDecl*> <functions:FunctionDecl*> <entry:EntryExpr?> <e:@R> => {
+        ast::Program { classes, functions, entry, span: tokens::Position::new(s, e) }
     },
 };
 
@@ -52,7 +52,7 @@ EntryExpr: ast::ExprBody = {
 // ═══════════════════════════════════════════════════════════════════
 
 ClassDecl: ast::ClassDecl = {
-    "type" <name:Id> <params:("(" <Params> ")")?> <parent:("is" <Id> <("(" <Args> ")")?>)?> "{" <attributes:(<AttrDecl> ";")*> <methods:MethodDecl*> "}" => {
+    <s:@L> "type" <name:Id> <params:("(" <Params> ")")?> <parent:("is" <Id> <("(" <Args> ")")?>)?> "{" <attributes:(<AttrDecl> ";")*> <methods:MethodDecl*> "}" <e:@R> => {
         let params = params.unwrap_or_default();
         let (parent_name, parent_args) = match parent {
             Some((p, args)) => (Some(p), args.unwrap_or_default()),
@@ -65,25 +65,26 @@ ClassDecl: ast::ClassDecl = {
             parent_args,
             attributes,
             methods,
+            span: tokens::Position::new(s, e),
         }
     },
 };
 
 FunctionDecl: ast::FunctionDecl = {
-    "function" <name:Id> "(" <params:Params> ")" <ret:(":" <Id>)?> <body:Body> => {
-        ast::FunctionDecl { name, params, return_type: ret, body }
+    <s:@L> "function" <name:Id> "(" <params:Params> ")" <ret:(":" <Id>)?> <body:Body> <e:@R> => {
+        ast::FunctionDecl { name, params, return_type: ret, body, span: tokens::Position::new(s, e) }
     },
 };
 
 MethodDecl: ast::Method = {
-    <name:Id> "(" <params:Params> ")" <ret:(":" <Id>)?> <body:Body> => {
-        ast::Method { name, params, return_type: ret, body }
+    <s:@L> <name:Id> "(" <params:Params> ")" <ret:(":" <Id>)?> <body:Body> <e:@R> => {
+        ast::Method { name, params, return_type: ret, body, span: tokens::Position::new(s, e) }
     },
 };
 
 AttrDecl: ast::Attribute = {
-    <name:Id> <type_ann:(":" <Id>)?> "=" <init:Expr> => {
-        ast::Attribute { name, type_ann, init }
+    <s:@L> <name:Id> <type_ann:(":" <Id>)?> "=" <init:Expr> <e:@R> => {
+        ast::Attribute { name, type_ann, init, span: tokens::Position::new(s, e) }
     },
 };
 
@@ -101,7 +102,7 @@ Params: Vec<ast::Param> = {
 };
 
 Param: ast::Param = {
-    <name:Id> <type_ann:(":" <Id>)?> => ast::Param { name, type_ann },
+    <s:@L> <name:Id> <type_ann:(":" <Id>)?> <e:@R> => ast::Param { name, type_ann, span: tokens::Position::new(s, e) },
 };
 
 Args: Vec<ast::Expression> = {
@@ -142,14 +143,14 @@ pub Expr: ast::Expression = {
 // ── let ─────────────────────────────────────────────────────────
 
 LetExpr: ast::Expression = {
-    "let" <decls:Comma1<LetDecl>> "in" <body:ExprBody> => {
-        ast::Expression::Let(Box::new(ast::LetExpr { decls, body }))
+    <s:@L> "let" <decls:Comma1<LetDecl>> "in" <body:ExprBody> <e:@R> => {
+        ast::Expression::Let(Box::new(ast::LetExpr { decls, body, span: tokens::Position::new(s, e) }))
     },
 };
 
 LetDecl: ast::LetDecl = {
-    <name:Id> <type_ann:(":" <Id>)?> "=" <value:Expr> => {
-        ast::LetDecl { name, type_ann, value }
+    <s:@L> <name:Id> <type_ann:(":" <Id>)?> "=" <value:Expr> <e:@R> => {
+        ast::LetDecl { name, type_ann, value, span: tokens::Position::new(s, e) }
     },
 };
 
@@ -165,18 +166,21 @@ Comma1<T>: Vec<T> = {
 // ── if (else is required — expressions must return a value) ─────
 
 IfExpr: ast::Expression = {
-    "if" "(" <cond:Expr> ")" <then_body:ExprBody>
+    <s:@L> "if" "(" <cond:Expr> ")" <then_body:ExprBody>
     <elifs:("elif" "(" <Expr> ")" <ExprBody>)*>
-    "else" <else_body:ExprBody> => {
+    "else" <else_body:ExprBody> <e:@R> => {
+        let span = tokens::Position::new(s, e);
         let elif_branches = elifs.into_iter().map(|(c, b)| ast::CondBranch {
             condition: c,
             body: b,
+            span,
         }).collect();
         ast::Expression::If(Box::new(ast::IfExpr {
             condition: cond,
             then_body,
             elif_branches,
             else_body: Some(else_body),
+            span,
         }))
     },
 };
@@ -184,12 +188,13 @@ IfExpr: ast::Expression = {
 // ── while (else is optional) ────────────────────────────────────
 
 WhileExpr: ast::Expression = {
-    "while" "(" <cond:Expr> ")" <body:ExprBody>
-    <else_body:("else" <ExprBody>)?> => {
+    <s:@L> "while" "(" <cond:Expr> ")" <body:ExprBody>
+    <else_body:("else" <ExprBody>)?> <e:@R> => {
         ast::Expression::While(Box::new(ast::WhileExpr {
             condition: cond,
             body,
             else_body,
+            span: tokens::Position::new(s, e),
         }))
     },
 };
@@ -197,8 +202,8 @@ WhileExpr: ast::Expression = {
 // ── case ────────────────────────────────────────────────────────
 
 CaseExpr: ast::Expression = {
-    "case" <expr:Expr> "of" <branches:CaseBranches> => {
-        ast::Expression::Case(Box::new(ast::CaseExpr { expr, branches }))
+    <s:@L> "case" <expr:Expr> "of" <branches:CaseBranches> <e:@R> => {
+        ast::Expression::Case(Box::new(ast::CaseExpr { expr, branches, span: tokens::Position::new(s, e) }))
     },
 };
 
@@ -208,16 +213,16 @@ CaseBranches: Vec<ast::CaseBranch> = {
 };
 
 SingleCaseBranch: ast::CaseBranch = {
-    <name:Id> ":" <type_name:Id> "=>" <body:ExprBody> => {
-        ast::CaseBranch { name, type_name, body }
+    <s:@L> <name:Id> ":" <type_name:Id> "=>" <body:ExprBody> <e:@R> => {
+        ast::CaseBranch { name, type_name, body, span: tokens::Position::new(s, e) }
     },
 };
 
 // ── assign (:= right-associative) ──────────────────────────────
 
 AssignExpr: ast::Expression = {
-    <target:OrExpr> ":=" <value:AssignExpr> => {
-        ast::Expression::Assign(Box::new(ast::AssignExpr { target, value }))
+    <s:@L> <target:OrExpr> ":=" <value:AssignExpr> <e:@R> => {
+        ast::Expression::Assign(Box::new(ast::AssignExpr { target, value, span: tokens::Position::new(s, e) }))
     },
     OrExpr,
 };
@@ -229,7 +234,7 @@ AssignExpr: ast::Expression = {
 // ── Level 1: OR (|) left-assoc ─────────────────────────────────
 
 OrExpr: ast::Expression = {
-    <l:OrExpr> <op:OrOp> <r:AndExpr> => ast::Expression::new_binary_op(l, r, op),
+    <s:@L> <l:OrExpr> <op:OrOp> <r:AndExpr> <e:@R> => ast::Expression::new_binary_op(l, r, op, tokens::Position::new(s, e)),
     AndExpr,
 };
 
@@ -240,7 +245,7 @@ OrOp: tokens::BinOp = {
 // ── Level 2: AND (&) left-assoc ────────────────────────────────
 
 AndExpr: ast::Expression = {
-    <l:AndExpr> <op:AndOp> <r:EqualityExpr> => ast::Expression::new_binary_op(l, r, op),
+    <s:@L> <l:AndExpr> <op:AndOp> <r:EqualityExpr> <e:@R> => ast::Expression::new_binary_op(l, r, op, tokens::Position::new(s, e)),
     EqualityExpr,
 };
 
@@ -251,7 +256,7 @@ AndOp: tokens::BinOp = {
 // ── Level 3: Equality (== !=) left-assoc ───────────────────────
 
 EqualityExpr: ast::Expression = {
-    <l:EqualityExpr> <op:EqualityOp> <r:ComparisonExpr> => ast::Expression::new_binary_op(l, r, op),
+    <s:@L> <l:EqualityExpr> <op:EqualityOp> <r:ComparisonExpr> <e:@R> => ast::Expression::new_binary_op(l, r, op, tokens::Position::new(s, e)),
     ComparisonExpr,
 };
 
@@ -263,7 +268,7 @@ EqualityOp: tokens::BinOp = {
 // ── Level 4: Comparison (< <= > >=) left-assoc ─────────────────
 
 ComparisonExpr: ast::Expression = {
-    <l:ComparisonExpr> <op:ComparisonOp> <r:ConcatExpr> => ast::Expression::new_binary_op(l, r, op),
+    <s:@L> <l:ComparisonExpr> <op:ComparisonOp> <r:ConcatExpr> <e:@R> => ast::Expression::new_binary_op(l, r, op, tokens::Position::new(s, e)),
     ConcatExpr,
 };
 
@@ -277,7 +282,7 @@ ComparisonOp: tokens::BinOp = {
 // ── Level 5: Concat (@ @@) left-assoc ──────────────────────────
 
 ConcatExpr: ast::Expression = {
-    <l:ConcatExpr> <op:ConcatOp> <r:AdditiveExpr> => ast::Expression::new_binary_op(l, r, op),
+    <s:@L> <l:ConcatExpr> <op:ConcatOp> <r:AdditiveExpr> <e:@R> => ast::Expression::new_binary_op(l, r, op, tokens::Position::new(s, e)),
     AdditiveExpr,
 };
 
@@ -289,7 +294,7 @@ ConcatOp: tokens::BinOp = {
 // ── Level 6: Additive (+ -) left-assoc ─────────────────────────
 
 AdditiveExpr: ast::Expression = {
-    <l:AdditiveExpr> <op:AdditiveOp> <r:MultiplicativeExpr> => ast::Expression::new_binary_op(l, r, op),
+    <s:@L> <l:AdditiveExpr> <op:AdditiveOp> <r:MultiplicativeExpr> <e:@R> => ast::Expression::new_binary_op(l, r, op, tokens::Position::new(s, e)),
     MultiplicativeExpr,
 };
 
@@ -301,7 +306,7 @@ AdditiveOp: tokens::BinOp = {
 // ── Level 7: Multiplicative (* / %) left-assoc ─────────────────
 
 MultiplicativeExpr: ast::Expression = {
-    <l:MultiplicativeExpr> <op:MultiplicativeOp> <r:PowerExpr> => ast::Expression::new_binary_op(l, r, op),
+    <s:@L> <l:MultiplicativeExpr> <op:MultiplicativeOp> <r:PowerExpr> <e:@R> => ast::Expression::new_binary_op(l, r, op, tokens::Position::new(s, e)),
     PowerExpr,
 };
 
@@ -314,8 +319,8 @@ MultiplicativeOp: tokens::BinOp = {
 // ── Level 8: Power (^) right-assoc ─────────────────────────────
 
 PowerExpr: ast::Expression = {
-    <base:UnaryExpr> <s:@L> "^" <e:@R> <exp:PowerExpr> => {
-        ast::Expression::new_binary_op(base, exp, tokens::BinOp::Pow(tokens::Position::new(s, e)))
+    <s:@L> <base:UnaryExpr> <os:@L> "^" <oe:@R> <exp:PowerExpr> <e:@R> => {
+        ast::Expression::new_binary_op(base, exp, tokens::BinOp::Pow(tokens::Position::new(os, oe)), tokens::Position::new(s, e))
     },
     UnaryExpr,
 };
@@ -323,7 +328,7 @@ PowerExpr: ast::Expression = {
 // ── Level 9: Unary prefix (- !) ────────────────────────────────
 
 UnaryExpr: ast::Expression = {
-    <op:UnaryOp> <expr:UnaryExpr> => ast::Expression::new_unary_op(op, expr),
+    <s:@L> <op:UnaryOp> <expr:UnaryExpr> <e:@R> => ast::Expression::new_unary_op(op, expr, tokens::Position::new(s, e)),
     PostfixExpr,
 };
 
@@ -335,23 +340,26 @@ UnaryOp: tokens::UnaryOp = {
 // ── Level 10: Postfix (. [] method call) ───────────────────────
 
 PostfixExpr: ast::Expression = {
-    <obj:PostfixExpr> "." <member:Id> "(" <args:Args> ")" => {
+    <s:@L> <obj:PostfixExpr> "." <member:Id> "(" <args:Args> ")" <e:@R> => {
         ast::Expression::MethodCall(Box::new(ast::MethodCall {
             object: obj,
             method: member,
             args,
+            span: tokens::Position::new(s, e),
         }))
     },
-    <obj:PostfixExpr> "." <member:Id> => {
+    <s:@L> <obj:PostfixExpr> "." <member:Id> <e:@R> => {
         ast::Expression::MemberAccess(Box::new(ast::MemberAccess {
             object: obj,
             member,
+            span: tokens::Position::new(s, e),
         }))
     },
-    <obj:PostfixExpr> "[" <idx:Expr> "]" => {
+    <s:@L> <obj:PostfixExpr> "[" <idx:Expr> "]" <e:@R> => {
         ast::Expression::IndexAccess(Box::new(ast::IndexAccess {
             object: obj,
             index: idx,
+            span: tokens::Position::new(s, e),
         }))
     },
     PrimaryExpr,
@@ -367,18 +375,18 @@ PrimaryExpr: ast::Expression = {
     <b:BoolLiteral> => ast::Expression::new_atom(ast::Atom::BooleanLiteral(b)),
 
     // Function call: id(args)
-    <name:Id> "(" <args:Args> ")" => {
-        ast::Expression::FunctionCall(Box::new(ast::FunctionCall { name, args }))
+    <s:@L> <name:Id> "(" <args:Args> ")" <e:@R> => {
+        ast::Expression::FunctionCall(Box::new(ast::FunctionCall { name, args, span: tokens::Position::new(s, e) }))
     },
 
     // Variable
     <s:@L> <name:Id> <e:@R> => ast::Expression::new_atom(ast::Atom::new_identifier(s, e, &name)),
 
     // Grouped expression
-    "(" <e:Expr> ")" => {
-        let op = tokens::GroupingOperator::OpenParen(tokens::Position::new(0, 0));
-        let cp = tokens::GroupingOperator::CloseParen(tokens::Position::new(0, 0));
-        ast::Expression::new_atom(ast::Atom::new_grouped_expression(ast::Group::new(op, e, cp)))
+    <s:@L> "(" <expr:Expr> ")" <e:@R> => {
+        let op = tokens::GroupingOperator::OpenParen(tokens::Position::new(s, s+1));
+        let cp = tokens::GroupingOperator::CloseParen(tokens::Position::new(e-1, e));
+        ast::Expression::new_atom(ast::Atom::new_grouped_expression(ast::Group::new(op, expr, cp)))
     },
 
     // new expressions
@@ -389,25 +397,27 @@ PrimaryExpr: ast::Expression = {
 
 NewExpr: ast::Expression = {
     // new Type(args) — instantiation
-    "new" <type_name:Id> "(" <args:Args> ")" => {
-        ast::Expression::NewInstance(Box::new(ast::NewInstance { type_name, args }))
+    <s:@L> "new" <type_name:Id> "(" <args:Args> ")" <e:@R> => {
+        ast::Expression::NewInstance(Box::new(ast::NewInstance { type_name, args, span: tokens::Position::new(s, e) }))
     },
 
     // new Type[size] — typed array (no init, use separate syntax for init)
-    "new" <type_name:Id> "[" <size:Expr> "]" => {
+    <s:@L> "new" <type_name:Id> "[" <size:Expr> "]" <e:@R> => {
         ast::Expression::NewArray(Box::new(ast::NewArray {
             type_name: Some(type_name),
             size,
             init: None,
+            span: tokens::Position::new(s, e),
         }))
     },
 
     // new [size] — untyped array
-    "new" "[" <size:Expr> "]" => {
+    <s:@L> "new" "[" <size:Expr> "]" <e:@R> => {
         ast::Expression::NewArray(Box::new(ast::NewArray {
             type_name: None,
             size,
             init: None,
+            span: tokens::Position::new(s, e),
         }))
     },
 };
