@@ -3,6 +3,7 @@ use lalrpop_util::lalrpop_mod;
 pub mod ast;
 pub mod errors;
 pub mod tokens;
+pub mod semantic;
 
 pub use ast::Expression;
 pub use ast::Program;
