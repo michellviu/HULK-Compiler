@@ -3,9 +3,9 @@ use super::position::Position;
 use crate::ast::Visitable;
 use crate::ast::Visitor;
 
-#[derive(Debug,Clone)]
+#[derive(Debug, Clone)]
 pub enum Literal {
-    Number(i32, Position),
+    Number(f64, Position),
     Str(String, Position),
     Bool(bool, Position),
 }
@@ -22,7 +22,6 @@ impl fmt::Display for Literal {
 
 impl Visitable for Literal {
     fn accept<V: Visitor>(&self, visitor: &mut V) {
-        visitor.visit_literal(&self);
+        visitor.visit_literal(self);
     }
-    
 }

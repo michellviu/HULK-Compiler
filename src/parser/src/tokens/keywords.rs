@@ -12,7 +12,11 @@ pub enum Keyword {
     While(Position),
     For(Position),
     Function(Position),
-    
+    Class(Position),
+    Case(Position),
+    Of(Position),
+    New(Position),
+    Is(Position),
 }
 
 impl Display for Keyword {
@@ -27,6 +31,11 @@ impl Display for Keyword {
             Keyword::Elif(_) => "elif",
             Keyword::For(_) => "for",
             Keyword::Function(_) => "function",
+            Keyword::Class(_) => "class",
+            Keyword::Case(_) => "case",
+            Keyword::Of(_) => "of",
+            Keyword::New(_) => "new",
+            Keyword::Is(_) => "is",
         };
         write!(f, "{}", s)
     }

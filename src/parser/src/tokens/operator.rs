@@ -1,39 +1,44 @@
 use std::fmt;
 use super::position::Position;
-#[derive(Debug,Clone)]
+
+#[derive(Debug, Clone)]
 pub enum BinOp {
-    // Binary operators
+    // Arithmetic
+    Plus(Position),
+    Minus(Position),
     Mul(Position),
     Div(Position),
     Mod(Position),
     Pow(Position),
-    Plus(Position),
-    Minus(Position),
 
-    // Comparison operators
+    // Comparison
     EqualEqual(Position),
-    NotEqual(Position),      // !=
+    NotEqual(Position),
     Less(Position),
     LessEqual(Position),
     Greater(Position),
     GreaterEqual(Position),
 
-    // Logical operators
-    AndAnd(Position),        // &&
-    OrOr(Position),          // ||
+    // Logical
+    And(Position),           // &
+    Or(Position),            // |
+
+    // String concatenation
+    Concat(Position),        // @
+    ConcatSpaced(Position),  // @@
+
+    // Assignment / initialization
     Equal(Position),         // =
     Assign(Position),        // :=
-    ConcatString(Position),  // @
 }
-
 
 impl fmt::Display for BinOp {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let s = match self {
-            BinOp::Mul(_) => "*",
-            BinOp::Div(_) => "/",
             BinOp::Plus(_) => "+",
             BinOp::Minus(_) => "-",
+            BinOp::Mul(_) => "*",
+            BinOp::Div(_) => "/",
             BinOp::Mod(_) => "%",
             BinOp::Pow(_) => "^",
             BinOp::EqualEqual(_) => "==",
@@ -42,60 +47,41 @@ impl fmt::Display for BinOp {
             BinOp::LessEqual(_) => "<=",
             BinOp::Greater(_) => ">",
             BinOp::GreaterEqual(_) => ">=",
-            BinOp::AndAnd(_) => "&&",
-            BinOp::OrOr(_) => "||",
+            BinOp::And(_) => "&",
+            BinOp::Or(_) => "|",
+            BinOp::Concat(_) => "@",
+            BinOp::ConcatSpaced(_) => "@@",
             BinOp::Equal(_) => "=",
             BinOp::Assign(_) => ":=",
-            BinOp::ConcatString(_) => "@",
         };
         write!(f, "{}", s)
     }
 }
-#[derive(Debug,Clone)]
+
+#[derive(Debug, Clone)]
 pub enum UnaryOp {
-    Plus(Position),
     Minus(Position),
     Not(Position),
 }
 
-
 impl fmt::Display for UnaryOp {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let s = match self {
-            UnaryOp::Plus(_) => "+",
             UnaryOp::Minus(_) => "-",
             UnaryOp::Not(_) => "!",
         };
         write!(f, "{}", s)
     }
 }
-#[derive(Debug)]
-pub enum SpecialOp {
-    Semicolon(Position),
-    Comma(Position),
-    Colon(Position),
-    Dot(Position),
-    Arrow(Position),
-}
 
-impl fmt::Display for SpecialOp {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let s = match self {
-            SpecialOp::Semicolon(_) => ";",
-            SpecialOp::Comma(_) => ",",
-            SpecialOp::Colon(_) => ":",
-            SpecialOp::Dot(_) => ".",
-            SpecialOp::Arrow(_) => "=>",
-        };
-        write!(f, "{}", s)
-    }
-}
-#[derive(Debug,Clone)]
+#[derive(Debug, Clone)]
 pub enum GroupingOperator {
     OpenParen(Position),
     CloseParen(Position),
     OpenBrace(Position),
     CloseBrace(Position),
+    OpenBracket(Position),
+    CloseBracket(Position),
 }
 
 impl fmt::Display for GroupingOperator {
@@ -105,6 +91,8 @@ impl fmt::Display for GroupingOperator {
             GroupingOperator::CloseParen(_) => ")",
             GroupingOperator::OpenBrace(_) => "{",
             GroupingOperator::CloseBrace(_) => "}",
+            GroupingOperator::OpenBracket(_) => "[",
+            GroupingOperator::CloseBracket(_) => "]",
         };
         write!(f, "{}", s)
     }

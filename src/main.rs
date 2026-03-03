@@ -13,13 +13,14 @@ fn main() {
         std::process::exit(1);
     });
 
-    match parser::parse_expression(&source) {
-        Ok(expr) => {
+    match parser::parse_program(&source) {
+        Ok(program) => {
             let mut printer = AstPrinterVisitor::new();
-            expr.accept(&mut printer);
+            program.accept(&mut printer);
         }
-        Err(err) => {
-            eprintln!("ERROR: Fallo el parseo: {}", err);
+        Err(syntax_err) => {
+            let diagnostic = parser::format_error(&syntax_err, &script_path);
+            eprintln!("{}", diagnostic);
             std::process::exit(1);
         }
     }

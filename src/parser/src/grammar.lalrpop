@@ -1,111 +1,441 @@
 use std::str::FromStr;
 use crate::ast;
 use crate::tokens;
-use crate::Expression;
 
 grammar;
 
-pub Expression: ast::Expression = {
-    Addition,
+// ═══════════════════════════════════════════════════════════════════
+// Match block: keyword priorities + regex tokens
+// ═══════════════════════════════════════════════════════════════════
+
+match {
+    // Keywords (higher priority than ID regex)
+    "let", "in", "if", "elif", "else", "while", "for",
+    "case", "of", "new", "type", "is", "function",
+    "true", "false",
+
+    // Multi-char operators (must appear before single-char ones)
+    "@@", ":=", "==", "!=", "<=", ">=", "=>",
+
+    // Single-char operators and punctuation
+    "+", "-", "*", "/", "%", "^",
+    "<", ">", "&", "|", "!", "@",
+    "=", ".", ",", ":", ";",
+    "(", ")", "{", "}", "[", "]",
+
+    // Whitespace (skip)
+    r"\s+" => {},
+
+    // Regex tokens
+    r"[0-9]+(\.[0-9]+)?" => NUMBER,
+    r#""([^"\\]|\\.)*""# => STRING,
+    r"[a-zA-Z_][a-zA-Z0-9_]*" => ID,
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Program
+// ═══════════════════════════════════════════════════════════════════
+
+pub Program: ast::Program = {
+    <classes:ClassDecl*> <functions:FunctionDecl*> <entry:EntryExpr?> => {
+        ast::Program { classes, functions, entry }
+    },
 };
 
-pub Addition: ast::Expression = {
-    <l:Addition> <op:PlusMinusBinary> <r:Factor> => ast::Expression::new_binary_op(l, r, op),
-    Factor,
+EntryExpr: ast::ExprBody = {
+    <e:Expr> ";" => ast::ExprBody::Single(Box::new(e)),
+    "{" <exprs:(<Expr> ";")+> "}" => ast::ExprBody::Block(exprs),
 };
 
-Factor: ast::Expression = {
-    <l:Factor> <op:FactorOp> <r:Unary> => ast::Expression::new_binary_op(l, r, op),
-    Unary,
+// ═══════════════════════════════════════════════════════════════════
+// Declarations
+// ═══════════════════════════════════════════════════════════════════
+
+ClassDecl: ast::ClassDecl = {
+    "type" <name:Id> <params:("(" <Params> ")")?> <parent:("is" <Id> <("(" <Args> ")")?>)?> "{" <attributes:(<AttrDecl> ";")*> <methods:MethodDecl*> "}" => {
+        let params = params.unwrap_or_default();
+        let (parent_name, parent_args) = match parent {
+            Some((p, args)) => (Some(p), args.unwrap_or_default()),
+            None => (None, vec![]),
+        };
+        ast::ClassDecl {
+            name,
+            params,
+            parent: parent_name,
+            parent_args,
+            attributes,
+            methods,
+        }
+    },
 };
 
-Unary: ast::Expression = {
-    <op:UnaryOp> <expr:Unary> => ast::Expression::new_unary_op(op, expr),
-    <a:Atom> => ast::Expression::new_atom(a),
+FunctionDecl: ast::FunctionDecl = {
+    "function" <name:Id> "(" <params:Params> ")" <ret:(":" <Id>)?> <body:Body> => {
+        ast::FunctionDecl { name, params, return_type: ret, body }
+    },
 };
 
-pub Atom: ast::Atom = {
-    <n:NumLiteral> => ast::Atom::NumberLiteral(n),
-    <b:BoolLiteral> => ast::Atom::BooleanLiteral(b),
-    <s:StrLiteral> => ast::Atom::StringLiteral(s),
-    <v:Variable> => v,
-    <g:GroupedExpression> => g,
+MethodDecl: ast::Method = {
+    <name:Id> "(" <params:Params> ")" <ret:(":" <Id>)?> <body:Body> => {
+        ast::Method { name, params, return_type: ret, body }
+    },
 };
 
-Variable: ast::Atom = {
-    <s: @L> <v: r"[a-zA-Z_][a-zA-Z0-9_]*"> <e: @R> => ast::Atom::new_identifier(s, e, v),
+AttrDecl: ast::Attribute = {
+    <name:Id> <type_ann:(":" <Id>)?> "=" <init:Expr> => {
+        ast::Attribute { name, type_ann, init }
+    },
 };
 
-GroupedExpression: ast::Atom = {
-     <op:OpenParen> <e: Expression> <cp:CloseParen> => ast::Atom::new_grouped_expression(ast::Group::new(op,e,cp)),
+Body: ast::Body = {
+    "=>" <e:Expr> ";" => ast::Body::Inline(e),
+    "{" <exprs:(<Expr> ";")+> "}" => ast::Body::Block(exprs),
 };
 
-OpenBrace: tokens::GroupingOperator = {
-    <s: @L> "{" <e: @R> => tokens::GroupingOperator::OpenBrace(tokens::Position::new(s, e)),
+// ═══════════════════════════════════════════════════════════════════
+// Parameters & Arguments
+// ═══════════════════════════════════════════════════════════════════
+
+Params: Vec<ast::Param> = {
+    <v:Comma<Param>> => v,
 };
 
-CloseBrace: tokens::GroupingOperator = {
-    <s: @L> "}" <e: @R> => tokens::GroupingOperator::CloseBrace(tokens::Position::new(s, e)),
+Param: ast::Param = {
+    <name:Id> <type_ann:(":" <Id>)?> => ast::Param { name, type_ann },
 };
 
-OpenParen: tokens::GroupingOperator = {
-    <s: @L> "(" <e: @R> => tokens::GroupingOperator::OpenParen(tokens::Position::new(s, e)),
+Args: Vec<ast::Expression> = {
+    <v:Comma<Expr>> => v,
 };
 
-CloseParen: tokens::GroupingOperator = {
-    <s: @L> ")" <e: @R> => tokens::GroupingOperator::CloseParen(tokens::Position::new(s, e)),
+// Comma-separated list (0 or more)
+Comma<T>: Vec<T> = {
+    => vec![],
+    <v:(<T> ",")*> <last:T> => {
+        let mut v = v;
+        v.push(last);
+        v
+    },
 };
 
-PlusMinusBinary: tokens::BinOp = {
-   <s: @L> "+" <e: @R> => tokens::BinOp::Plus(tokens::Position::new(s, e)),
-   <s: @L> "-" <e: @R> => tokens::BinOp::Minus(tokens::Position::new(s, e)),
+// ═══════════════════════════════════════════════════════════════════
+// Expression body — always uses a block { }
+// This avoids dangling-else ambiguity entirely.
+// ═══════════════════════════════════════════════════════════════════
+
+ExprBody: ast::ExprBody = {
+    "{" <exprs:(<Expr> ";")+> "}" => ast::ExprBody::Block(exprs),
 };
 
+// ═══════════════════════════════════════════════════════════════════
+// Expressions — top level
+// ═══════════════════════════════════════════════════════════════════
 
-FactorOp: tokens::BinOp = {
-   <s: @L> "*" <e: @R> => tokens::BinOp::Mul(tokens::Position::new(s, e)),
-   <s: @L> "/" <e: @R> => tokens::BinOp::Div(tokens::Position::new(s, e)),
-   <s: @L> "%" <e: @R> => tokens::BinOp::Mod(tokens::Position::new(s, e)),
+pub Expr: ast::Expression = {
+    LetExpr,
+    IfExpr,
+    WhileExpr,
+    CaseExpr,
+    AssignExpr,
 };
+
+// ── let ─────────────────────────────────────────────────────────
+
+LetExpr: ast::Expression = {
+    "let" <decls:Comma1<LetDecl>> "in" <body:ExprBody> => {
+        ast::Expression::Let(Box::new(ast::LetExpr { decls, body }))
+    },
+};
+
+LetDecl: ast::LetDecl = {
+    <name:Id> <type_ann:(":" <Id>)?> "=" <value:Expr> => {
+        ast::LetDecl { name, type_ann, value }
+    },
+};
+
+// Comma-separated list (1 or more)
+Comma1<T>: Vec<T> = {
+    <v:(<T> ",")*> <last:T> => {
+        let mut v = v;
+        v.push(last);
+        v
+    },
+};
+
+// ── if (else is required — expressions must return a value) ─────
+
+IfExpr: ast::Expression = {
+    "if" "(" <cond:Expr> ")" <then_body:ExprBody>
+    <elifs:("elif" "(" <Expr> ")" <ExprBody>)*>
+    "else" <else_body:ExprBody> => {
+        let elif_branches = elifs.into_iter().map(|(c, b)| ast::CondBranch {
+            condition: c,
+            body: b,
+        }).collect();
+        ast::Expression::If(Box::new(ast::IfExpr {
+            condition: cond,
+            then_body,
+            elif_branches,
+            else_body: Some(else_body),
+        }))
+    },
+};
+
+// ── while (else is optional) ────────────────────────────────────
+
+WhileExpr: ast::Expression = {
+    "while" "(" <cond:Expr> ")" <body:ExprBody>
+    <else_body:("else" <ExprBody>)?> => {
+        ast::Expression::While(Box::new(ast::WhileExpr {
+            condition: cond,
+            body,
+            else_body,
+        }))
+    },
+};
+
+// ── case ────────────────────────────────────────────────────────
+
+CaseExpr: ast::Expression = {
+    "case" <expr:Expr> "of" <branches:CaseBranches> => {
+        ast::Expression::Case(Box::new(ast::CaseExpr { expr, branches }))
+    },
+};
+
+CaseBranches: Vec<ast::CaseBranch> = {
+    <b:SingleCaseBranch> => vec![b],
+    "{" <branches:(<SingleCaseBranch> ";")*> "}" => branches,
+};
+
+SingleCaseBranch: ast::CaseBranch = {
+    <name:Id> ":" <type_name:Id> "=>" <body:ExprBody> => {
+        ast::CaseBranch { name, type_name, body }
+    },
+};
+
+// ── assign (:= right-associative) ──────────────────────────────
+
+AssignExpr: ast::Expression = {
+    <target:OrExpr> ":=" <value:AssignExpr> => {
+        ast::Expression::Assign(Box::new(ast::AssignExpr { target, value }))
+    },
+    OrExpr,
+};
+
+// ═══════════════════════════════════════════════════════════════════
+// Binary operators by precedence (low → high)
+// ═══════════════════════════════════════════════════════════════════
+
+// ── Level 1: OR (|) left-assoc ─────────────────────────────────
+
+OrExpr: ast::Expression = {
+    <l:OrExpr> <op:OrOp> <r:AndExpr> => ast::Expression::new_binary_op(l, r, op),
+    AndExpr,
+};
+
+OrOp: tokens::BinOp = {
+    <s:@L> "|" <e:@R> => tokens::BinOp::Or(tokens::Position::new(s, e)),
+};
+
+// ── Level 2: AND (&) left-assoc ────────────────────────────────
+
+AndExpr: ast::Expression = {
+    <l:AndExpr> <op:AndOp> <r:EqualityExpr> => ast::Expression::new_binary_op(l, r, op),
+    EqualityExpr,
+};
+
+AndOp: tokens::BinOp = {
+    <s:@L> "&" <e:@R> => tokens::BinOp::And(tokens::Position::new(s, e)),
+};
+
+// ── Level 3: Equality (== !=) left-assoc ───────────────────────
+
+EqualityExpr: ast::Expression = {
+    <l:EqualityExpr> <op:EqualityOp> <r:ComparisonExpr> => ast::Expression::new_binary_op(l, r, op),
+    ComparisonExpr,
+};
+
+EqualityOp: tokens::BinOp = {
+    <s:@L> "==" <e:@R> => tokens::BinOp::EqualEqual(tokens::Position::new(s, e)),
+    <s:@L> "!=" <e:@R> => tokens::BinOp::NotEqual(tokens::Position::new(s, e)),
+};
+
+// ── Level 4: Comparison (< <= > >=) left-assoc ─────────────────
+
+ComparisonExpr: ast::Expression = {
+    <l:ComparisonExpr> <op:ComparisonOp> <r:ConcatExpr> => ast::Expression::new_binary_op(l, r, op),
+    ConcatExpr,
+};
+
+ComparisonOp: tokens::BinOp = {
+    <s:@L> "<" <e:@R>  => tokens::BinOp::Less(tokens::Position::new(s, e)),
+    <s:@L> "<=" <e:@R> => tokens::BinOp::LessEqual(tokens::Position::new(s, e)),
+    <s:@L> ">" <e:@R>  => tokens::BinOp::Greater(tokens::Position::new(s, e)),
+    <s:@L> ">=" <e:@R> => tokens::BinOp::GreaterEqual(tokens::Position::new(s, e)),
+};
+
+// ── Level 5: Concat (@ @@) left-assoc ──────────────────────────
+
+ConcatExpr: ast::Expression = {
+    <l:ConcatExpr> <op:ConcatOp> <r:AdditiveExpr> => ast::Expression::new_binary_op(l, r, op),
+    AdditiveExpr,
+};
+
+ConcatOp: tokens::BinOp = {
+    <s:@L> "@" <e:@R>  => tokens::BinOp::Concat(tokens::Position::new(s, e)),
+    <s:@L> "@@" <e:@R> => tokens::BinOp::ConcatSpaced(tokens::Position::new(s, e)),
+};
+
+// ── Level 6: Additive (+ -) left-assoc ─────────────────────────
+
+AdditiveExpr: ast::Expression = {
+    <l:AdditiveExpr> <op:AdditiveOp> <r:MultiplicativeExpr> => ast::Expression::new_binary_op(l, r, op),
+    MultiplicativeExpr,
+};
+
+AdditiveOp: tokens::BinOp = {
+    <s:@L> "+" <e:@R> => tokens::BinOp::Plus(tokens::Position::new(s, e)),
+    <s:@L> "-" <e:@R> => tokens::BinOp::Minus(tokens::Position::new(s, e)),
+};
+
+// ── Level 7: Multiplicative (* / %) left-assoc ─────────────────
+
+MultiplicativeExpr: ast::Expression = {
+    <l:MultiplicativeExpr> <op:MultiplicativeOp> <r:PowerExpr> => ast::Expression::new_binary_op(l, r, op),
+    PowerExpr,
+};
+
+MultiplicativeOp: tokens::BinOp = {
+    <s:@L> "*" <e:@R> => tokens::BinOp::Mul(tokens::Position::new(s, e)),
+    <s:@L> "/" <e:@R> => tokens::BinOp::Div(tokens::Position::new(s, e)),
+    <s:@L> "%" <e:@R> => tokens::BinOp::Mod(tokens::Position::new(s, e)),
+};
+
+// ── Level 8: Power (^) right-assoc ─────────────────────────────
+
+PowerExpr: ast::Expression = {
+    <base:UnaryExpr> <s:@L> "^" <e:@R> <exp:PowerExpr> => {
+        ast::Expression::new_binary_op(base, exp, tokens::BinOp::Pow(tokens::Position::new(s, e)))
+    },
+    UnaryExpr,
+};
+
+// ── Level 9: Unary prefix (- !) ────────────────────────────────
+
+UnaryExpr: ast::Expression = {
+    <op:UnaryOp> <expr:UnaryExpr> => ast::Expression::new_unary_op(op, expr),
+    PostfixExpr,
+};
+
+UnaryOp: tokens::UnaryOp = {
+    <s:@L> "-" <e:@R> => tokens::UnaryOp::Minus(tokens::Position::new(s, e)),
+    <s:@L> "!" <e:@R> => tokens::UnaryOp::Not(tokens::Position::new(s, e)),
+};
+
+// ── Level 10: Postfix (. [] method call) ───────────────────────
+
+PostfixExpr: ast::Expression = {
+    <obj:PostfixExpr> "." <member:Id> "(" <args:Args> ")" => {
+        ast::Expression::MethodCall(Box::new(ast::MethodCall {
+            object: obj,
+            method: member,
+            args,
+        }))
+    },
+    <obj:PostfixExpr> "." <member:Id> => {
+        ast::Expression::MemberAccess(Box::new(ast::MemberAccess {
+            object: obj,
+            member,
+        }))
+    },
+    <obj:PostfixExpr> "[" <idx:Expr> "]" => {
+        ast::Expression::IndexAccess(Box::new(ast::IndexAccess {
+            object: obj,
+            index: idx,
+        }))
+    },
+    PrimaryExpr,
+};
+
+// ═══════════════════════════════════════════════════════════════════
+// Primary expressions (atoms)
+// ═══════════════════════════════════════════════════════════════════
+
+PrimaryExpr: ast::Expression = {
+    <n:NumLiteral> => ast::Expression::new_atom(ast::Atom::NumberLiteral(n)),
+    <s:StrLiteral> => ast::Expression::new_atom(ast::Atom::StringLiteral(s)),
+    <b:BoolLiteral> => ast::Expression::new_atom(ast::Atom::BooleanLiteral(b)),
+
+    // Function call: id(args)
+    <name:Id> "(" <args:Args> ")" => {
+        ast::Expression::FunctionCall(Box::new(ast::FunctionCall { name, args }))
+    },
+
+    // Variable
+    <s:@L> <name:Id> <e:@R> => ast::Expression::new_atom(ast::Atom::new_identifier(s, e, &name)),
+
+    // Grouped expression
+    "(" <e:Expr> ")" => {
+        let op = tokens::GroupingOperator::OpenParen(tokens::Position::new(0, 0));
+        let cp = tokens::GroupingOperator::CloseParen(tokens::Position::new(0, 0));
+        ast::Expression::new_atom(ast::Atom::new_grouped_expression(ast::Group::new(op, e, cp)))
+    },
+
+    // new expressions
+    NewExpr,
+};
+
+// ── new ─────────────────────────────────────────────────────────
+
+NewExpr: ast::Expression = {
+    // new Type(args) — instantiation
+    "new" <type_name:Id> "(" <args:Args> ")" => {
+        ast::Expression::NewInstance(Box::new(ast::NewInstance { type_name, args }))
+    },
+
+    // new Type[size] — typed array (no init, use separate syntax for init)
+    "new" <type_name:Id> "[" <size:Expr> "]" => {
+        ast::Expression::NewArray(Box::new(ast::NewArray {
+            type_name: Some(type_name),
+            size,
+            init: None,
+        }))
+    },
+
+    // new [size] — untyped array
+    "new" "[" <size:Expr> "]" => {
+        ast::Expression::NewArray(Box::new(ast::NewArray {
+            type_name: None,
+            size,
+            init: None,
+        }))
+    },
+};
+
+// ═══════════════════════════════════════════════════════════════════
+// Literals & ID helper
+// ═══════════════════════════════════════════════════════════════════
 
 NumLiteral: tokens::Literal = {
-   <s: @L> <v: r"[0-9]+"> <e: @R> => tokens::Literal::Number(
-        i32::from_str(v).unwrap(),
-        tokens::Position::new(s, e)
+    <s:@L> <v:NUMBER> <e:@R> => tokens::Literal::Number(
+        f64::from_str(v).unwrap(),
+        tokens::Position::new(s, e),
     ),
 };
 
 BoolLiteral: tokens::Literal = {
-   <s: @L> "true" <e: @R> => tokens::Literal::Bool(true, tokens::Position::new(s, e)),
-   <s: @L> "false" <e: @R> => tokens::Literal::Bool(false, tokens::Position::new(s, e)),
+    <s:@L> "true"  <e:@R> => tokens::Literal::Bool(true,  tokens::Position::new(s, e)),
+    <s:@L> "false" <e:@R> => tokens::Literal::Bool(false, tokens::Position::new(s, e)),
 };
 
 StrLiteral: tokens::Literal = {
-   <s: @L> <v: r#""([^"\\]|\\.)*""#> <e: @R> => tokens::Literal::Str(
+    <s:@L> <v:STRING> <e:@R> => tokens::Literal::Str(
         v[1..v.len()-1].to_string(),
-        tokens::Position::new(s, e)
+        tokens::Position::new(s, e),
     ),
 };
 
-ComparisonOp: tokens::BinOp = {
-    <s: @L> "==" <e: @R> => tokens::BinOp::EqualEqual(tokens::Position::new(s, e)),
-    <s: @L> "!=" <e: @R> => tokens::BinOp::NotEqual(tokens::Position::new(s, e)),
-    <s: @L> "<" <e: @R>  => tokens::BinOp::Less(tokens::Position::new(s, e)),
-    <s: @L> "<=" <e: @R> => tokens::BinOp::LessEqual(tokens::Position::new(s, e)),
-    <s: @L> ">" <e: @R>  => tokens::BinOp::Greater(tokens::Position::new(s, e)),
-    <s: @L> ">=" <e: @R> => tokens::BinOp::GreaterEqual(tokens::Position::new(s, e)),
-};
-
-LogicalOp: tokens::BinOp = {
-    <s: @L> "&&" <e: @R> => tokens::BinOp::AndAnd(tokens::Position::new(s, e)),
-    <s: @L> "||" <e: @R> => tokens::BinOp::OrOr(tokens::Position::new(s, e)),
-};
-
-UnaryOp: tokens::UnaryOp = {
-    <s: @L> "!" <e: @R> => tokens::UnaryOp::Not(tokens::Position::new(s, e)),
-    <s: @L> "-" <e: @R> => tokens::UnaryOp::Minus(tokens::Position::new(s, e)),
-};
-
-AssignDestructiveOperator: tokens::BinOp = {
-    <s: @L> ":=" <e: @R> => tokens::BinOp::Assign(tokens::Position::new(s, e)),
+// Helper: returns a String from the ID regex
+Id: String = {
+    <v:ID> => v.to_string(),
 };
