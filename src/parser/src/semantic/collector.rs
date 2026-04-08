@@ -85,19 +85,41 @@ impl<'a> Visitor for CollectorVisitor<'a> {
             })
             .collect();
 
-        // Collect attributes.
-        let attributes: Vec<AttrInfo> = class
-            .attributes
-            .iter()
-            .map(|a| AttrInfo {
+        // Collect explicitly declared attributes.
+        let mut attributes: Vec<AttrInfo> = Vec::new();
+        // When the initializer is a variable that matches a constructor param,
+        // use the constructor param's type.
+        for a in &class.attributes {
+            let hulk_type = match &a.type_ann {
+                Some(ann) => HulkType::from_name(ann),
+                None => {
+                    let inferred = infer_type_from_expr(&a.init);
+                    if inferred == HulkType::Unknown {
+                        // Try to match init variable to a constructor param.
+                        if let ast::Expression::Atom(atom) = &a.init {
+                            if let ast::atoms::atom::Atom::Variable(var) = atom.as_ref() {
+                                params
+                                    .iter()
+                                    .find(|(n, _)| n == &var.name)
+                                    .map(|(_, t)| t.clone())
+                                    .unwrap_or(HulkType::Unknown)
+                            } else {
+                                HulkType::Unknown
+                            }
+                        } else {
+                            HulkType::Unknown
+                        }
+                    } else {
+                        inferred
+                    }
+                }
+            };
+            attributes.push(AttrInfo {
                 name: a.name.clone(),
-                hulk_type: match &a.type_ann {
-                    Some(ann) => HulkType::from_name(ann),
-                    None => HulkType::Unknown, // will be inferred during type check
-                },
+                hulk_type,
                 span: a.span,
-            })
-            .collect();
+            });
+        }
 
         // Collect methods (signatures only — bodies are not analysed here).
         let mut methods = HashMap::new();
@@ -262,4 +284,27 @@ fn check_inheritance_cycles(symbols: &SymbolTable) -> Vec<CompilerError> {
     }
 
     errors
+}
+
+/// Attempts to infer a `HulkType` from a simple initializer expression.
+/// Handles literals, unary minus on number, and `new ClassName(...)`.
+/// Returns `Unknown` for anything more complex.
+fn infer_type_from_expr(expr: &ast::Expression) -> HulkType {
+    match expr {
+        ast::Expression::Atom(atom) => match atom.as_ref() {
+            ast::atoms::atom::Atom::NumberLiteral(_) => HulkType::Number,
+            ast::atoms::atom::Atom::StringLiteral(_) => HulkType::String,
+            ast::atoms::atom::Atom::BooleanLiteral(_) => HulkType::Boolean,
+            ast::atoms::atom::Atom::Group(g) => infer_type_from_expr(&g.expression),
+            _ => HulkType::Unknown,
+        },
+        ast::Expression::UnaryOp(unary) => {
+            match &unary.op {
+                tokens::UnaryOp::Minus(_) => HulkType::Number,
+                tokens::UnaryOp::Not(_) => HulkType::Boolean,
+            }
+        }
+        ast::Expression::NewInstance(inst) => HulkType::Class(inst.type_name.clone()),
+        _ => HulkType::Unknown,
+    }
 }

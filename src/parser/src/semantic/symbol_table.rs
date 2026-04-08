@@ -302,7 +302,7 @@ impl SymbolTable {
     }
 
     /// Returns the chain of ancestors: [self, parent, grandparent, ..., Object].
-    fn ancestors(&self, class_name: &str) -> Vec<String> {
+    pub fn ancestors(&self, class_name: &str) -> Vec<String> {
         let mut chain = vec![];
         let mut current = class_name.to_string();
         let mut visited = std::collections::HashSet::new();
