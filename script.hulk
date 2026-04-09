@@ -9,16 +9,38 @@ type Point {
     setY(y) => self.y := y;
 }
 
+type Perro(nombre: String, raza: String) {
+    nombre: String = nombre;
+    raza: String = raza;
+
+    ladrar() => print("Woof!");
+}
 
 
-function rec(n:number):number {
-    if(n <= 1){
-        print(n);
+function factorial(n: Number): Number {
+    if (n <= 1) {
+        1;
     }
-    else{
-        print(n);
-        rec(n - 1);
+    else {
+        n * factorial(n - 1);
     };
 }
 
-print("Enter a number: ");
+function hola(s: String) : Void {
+        print("Hola, " @ s @ "!");
+}
+
+
+
+{
+let x = 10 in {
+    print(factorial(x));
+};
+hola("Mundo");
+
+let perro = new Perro("Fido", "Labrador") in {
+    print(perro.nombre);
+    print(perro.raza);
+    perro.ladrar();
+};
+}
