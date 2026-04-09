@@ -1,8 +1,11 @@
 use std::env;
 use std::fs;
+use std::path::Path;
 
 use parser::ast::{AstPrinterVisitor, Visitable};
 use parser::semantic;
+
+mod codegen;
 
 fn main() {
     let script_path = env::args()
@@ -25,12 +28,12 @@ fn main() {
     };
 
     // (Optional) Print AST if --ast flag is given.
-    let print_ast = env::args().any(|a| a == "--ast");
-    if print_ast {
+    // let print_ast = env::args().any(|a| a == "--ast");
+    // if print_ast {
         let mut printer = AstPrinterVisitor::new();
         program.accept(&mut printer);
         println!();
-    }
+    // }
 
     // ── Phases 2-4: Semantic analysis ───────────────────────────
     let result = semantic::analyze(&program);
@@ -73,6 +76,61 @@ fn main() {
         );
     }
 
-    // ── Phase 5: Codegen (not yet implemented) ──────────────────
-    println!("\x1b[1;32m✓\x1b[0m Análisis semántico y de tipos completado exitosamente.");
+    // ── Phase 5: Code generation ──────────────────────────────────
+    let output_name = Path::new(&script_path)
+        .file_stem()
+        .unwrap()
+        .to_str()
+        .unwrap();
+    let output_path = Path::new(output_name);
+
+    // Find runtime relative to the executable or in standard locations.
+    let runtime_path = find_runtime();
+
+    eprintln!(
+        "\x1b[1;34m→\x1b[0m Generando código LLVM…"
+    );
+
+    match codegen::compile(&program, result.symbols, output_path, &runtime_path) {
+        Ok(exe_path) => {
+            eprintln!(
+                "\x1b[1;32m✓\x1b[0m Compilación exitosa → \x1b[1m{}\x1b[0m",
+                exe_path.display()
+            );
+        }
+        Err(err) => {
+            eprintln!("\x1b[1;31merror\x1b[0m: {}", err);
+            std::process::exit(1);
+        }
+    }
+}
+
+/// Searches for the HULK C runtime source file.
+fn find_runtime() -> std::path::PathBuf {
+    // Try relative to CWD.
+    let candidates = [
+        "runtime/hulk_runtime.c",
+        "src/runtime/hulk_runtime.c",
+        "../runtime/hulk_runtime.c",
+    ];
+    for c in &candidates {
+        let p = Path::new(c);
+        if p.exists() {
+            return p.to_path_buf();
+        }
+    }
+
+    // Try relative to the executable.
+    if let Ok(exe) = env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            let p = dir.join("../../runtime/hulk_runtime.c");
+            if p.exists() {
+                return p;
+            }
+        }
+    }
+
+    // Fallback.
+    eprintln!("\x1b[1;31merror\x1b[0m: No se encontró runtime/hulk_runtime.c");
+    std::process::exit(1);
 }
