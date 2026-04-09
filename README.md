@@ -8,7 +8,7 @@ Compilador para el lenguaje HULK, implementado en Rust con [LALRPOP](https://git
 HULK-Compiler/
 ├── Cargo.toml              # Workspace raíz
 ├── Makefile                # Comandos de construcción y pruebas
-├── HULK_GRAMMAR.md         # Gramática desambiguada de referencia
+├── HULK_GRAMMAR.md         # Gramática de referencia
 ├── script.hulk             # Archivo de prueba para el parser
 └── src/
     ├── main.rs             # Punto de entrada: lee script.hulk y muestra el AST
@@ -28,7 +28,7 @@ HULK-Compiler/
 ## Gramática de referencia
 
 Consulta [HULK_GRAMMAR.md](./HULK_GRAMMAR.md) para la gramática completa desambiguada
-con tabla de precedencia de operadores y clases de nodos AST sugeridas.
+con tabla de precedencia de operadores y clases de nodos AST.
 
 ---
 
@@ -50,26 +50,14 @@ operadores unarios y paréntesis.
 Ejemplos válidos:
 
 ```hulk
-2 + 3 * (4 - 5) / 6
-```
-
-```hulk
--(1 + 2)
-```
-
-```hulk
-!true
-```
-
-```hulk
-"hello"
+print("Hello World!");
 ```
 
 ### Paso 2: Compilar y ejecutar con el Makefile
 
 ```bash
 # Compilar el proyecto (sin ejecutar)
-make build
+make compile
 
 # Parsear script.hulk y mostrar el AST por consola
 make parse
