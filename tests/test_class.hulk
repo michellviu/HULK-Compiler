@@ -1,0 +1,28 @@
+type Point(x_val: Number, y_val: Number) {
+    x: Number = x_val;
+    y: Number = y_val;
+
+    getX(): Number => self.x;
+    getY(): Number => self.y;
+    sum(): Number => self.x + self.y;
+}
+
+type Counter(start: Number) {
+    val = start;
+
+    current(): Number => self.val;
+    increment() => self.val := self.val + 1;
+    add(n: Number) => self.val := self.val + n;
+}
+
+let p = new Point(3, 4) in {
+    print(p.getX());
+    print(p.getY());
+    print(p.sum());
+    let c = new Counter(10) in {
+        c.increment();
+        c.increment();
+        c.add(5);
+        print(c.current());
+    };
+};

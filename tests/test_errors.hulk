@@ -1,0 +1,29 @@
+type Animal {
+    name: String = "unknown";
+
+    greet(): String => "Hello, I am " @@ self.name;
+}
+
+type Dog is Animal {
+    breed: String = "mixed";
+
+    bark() => "Woof!";
+}
+
+function test_errors(): Number {
+    let x: Number = "hello" in {
+        print(x);
+    };
+}
+
+function bad_call() => factorial(1, 2, 3);
+
+{
+    let y = undeclared_var in {
+        print(y);
+    };
+    print(nonexistent_func());
+    let z: Number = true in {
+        z;
+    };
+}
