@@ -426,14 +426,8 @@ impl<'a> TypeChecker<'a> {
         }
 
         let body_type = self.infer_expr_body(&while_expr.body);
+        body_type
 
-        match &while_expr.else_body {
-            Some(else_body) => {
-                let et = self.infer_expr_body(else_body);
-                self.symbols.lca(&body_type, &et)
-            }
-            None => HulkType::Void,
-        }
     }
 
     fn infer_case(&mut self, case_expr: &ast::CaseExpr) -> HulkType {

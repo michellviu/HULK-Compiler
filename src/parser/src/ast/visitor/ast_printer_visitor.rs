@@ -259,13 +259,7 @@ impl Visitor for AstPrinterVisitor {
         self.indent += 1;
         self.print_expr_body(&while_expr.body);
         self.indent -= 1;
-        if let Some(ref else_body) = while_expr.else_body {
-            println!("{}Else:", self.pad());
-            self.indent += 1;
-            self.print_expr_body(else_body);
-            self.indent -= 1;
-        }
-        self.indent -= 1;
+
     }
 
     fn visit_case_expr(&mut self, case_expr: &ast::CaseExpr) {

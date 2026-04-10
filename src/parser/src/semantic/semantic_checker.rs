@@ -299,9 +299,6 @@ impl<'a> SemanticChecker<'a> {
     fn check_while(&mut self, while_expr: &ast::WhileExpr) {
         self.check_expression(&while_expr.condition);
         self.check_expr_body(&while_expr.body);
-        if let Some(ref else_body) = while_expr.else_body {
-            self.check_expr_body(else_body);
-        }
     }
 
     fn check_case(&mut self, case_expr: &ast::CaseExpr) {
@@ -420,7 +417,7 @@ impl<'a> SemanticChecker<'a> {
 
     fn warn_unused(&mut self, vars: &[super::symbol_table::VarInfo]) {
         for var in vars {
-            if !var.used && !var.name.starts_with('_') && var.name != "self" {
+            if !var.used && var.name != "self" {
                 self.errors
                     .push(CompilerError::unused_variable(&var.name, var.span));
             }

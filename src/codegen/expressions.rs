@@ -528,34 +528,15 @@ impl<'ctx> CodegenContext<'ctx> {
             .gen_expression(&while_expr.condition)
             .unwrap()
             .into_int_value();
-
-        let else_bb = if while_expr.else_body.is_some() {
-            let bb = self.context.append_basic_block(func, "while.else");
-            self.builder
-                .build_conditional_branch(cond_val, body_bb, bb)
-                .unwrap();
-            Some(bb)
-        } else {
-            self.builder
-                .build_conditional_branch(cond_val, body_bb, merge_bb)
-                .unwrap();
-            None
-        };
+        self.builder
+            .build_conditional_branch(cond_val, body_bb, merge_bb)
+            .unwrap();
 
         // Body.
         self.builder.position_at_end(body_bb);
         self.gen_expr_body(&while_expr.body);
         if self.builder.get_insert_block().unwrap().get_terminator().is_none() {
             self.builder.build_unconditional_branch(cond_bb).unwrap();
-        }
-
-        // Else.
-        if let (Some(else_body), Some(ebb)) = (&while_expr.else_body, else_bb) {
-            self.builder.position_at_end(ebb);
-            self.gen_expr_body(else_body);
-            if self.builder.get_insert_block().unwrap().get_terminator().is_none() {
-                self.builder.build_unconditional_branch(merge_bb).unwrap();
-            }
         }
 
         self.builder.position_at_end(merge_bb);
