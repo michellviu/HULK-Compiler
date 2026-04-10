@@ -9,19 +9,29 @@ HULK-Compiler/
 ├── Cargo.toml              # Workspace raíz
 ├── Makefile                # Comandos de construcción y pruebas
 ├── HULK_GRAMMAR.md         # Gramática de referencia
-├── script.hulk             # Archivo de prueba para el parser
+├── script.hulk             # Script de entrada de ejemplo
+├── runtime/
+│   └── hulk_runtime.c      # Runtime en C enlazado al binario final
+├── tests/
+│   ├── test_class.hulk
+│   ├── test_errors.hulk
+│   └── test_full.hulk
 └── src/
-    ├── main.rs             # Punto de entrada: lee script.hulk y muestra el AST
-    └── parser/             # Crate del parser (LALRPOP)
+    ├── main.rs             # Pipeline: parseo, semántica y generación LLVM
+    ├── codegen/            # Generación de IR LLVM y salida ejecutable
+    └── parser/             # Crate del parser + análisis semántico
         ├── build.rs        # Script de build que invoca lalrpop
         ├── Cargo.toml
         └── src/
             ├── grammar.lalrpop   # Gramática LALRPOP (producciones)
             ├── lib.rs            # API pública del parser
             ├── ast/              # Nodos del AST
-            │   ├── atoms/        # Atom, Group
-            │   ├── expressions/  # Expression, BinaryOp, UnaryOp
+            │   ├── atoms/
+            │   ├── declarations/
+            │   ├── expressions/
+            │   ├── program.rs
             │   └── visitor/      # Trait Visitor + AstPrinterVisitor
+            ├── semantic/         # Tipado, chequeos y diagnósticos
             └── tokens/           # Tokens: Literal, Identifier, Operator, etc.
 ```
 
@@ -39,13 +49,11 @@ con tabla de precedencia de operadores y clases de nodos AST.
 
 ---
 
-## Cómo probar el parser y el AST printer — Paso a paso
+## Cómo ejecutar el compilador — Paso a paso
 
 ### Paso 1: Editar `script.hulk`
 
-Escribe una expresión válida en el archivo `script.hulk` en la raíz del proyecto.
-La gramática actualmente soporta expresiones aritméticas, booleanas, strings,
-operadores unarios y paréntesis.
+Escribe un programa en `script.hulk` en la raíz del proyecto.
 
 Ejemplos válidos:
 
@@ -59,28 +67,23 @@ print("Hello World!");
 # Compilar el proyecto (sin ejecutar)
 make compile
 
-# Parsear script.hulk y mostrar el AST por consola
+# Parsear y compilar script.hulk (genera artefactos en build/)
 make parse
 
 # Parsear un archivo diferente
 make parse SCRIPT=otro_archivo.hulk
+
+# Ejecutar el binario generado
+make execute SCRIPT=otro_archivo.hulk
 ```
 
 ### Paso 3: Interpretar la salida
 
-La salida es un árbol AST indentado. Por ejemplo, para `2+3*(4-5)/6`:
+La salida muestra diagnósticos de compilación y el resultado final.
 
 ```
-BinaryOp: +
-  NumberLiteral: 2
-  BinaryOp: /
-    BinaryOp: *
-      NumberLiteral: 3
-      Group:
-        BinaryOp: -
-          NumberLiteral: 4
-          NumberLiteral: 5
-    NumberLiteral: 6
+→ Generando código LLVM…
+✓ Compilación exitosa → build/script
 ```
 
 ---
@@ -90,7 +93,9 @@ BinaryOp: +
 | Target            | Descripción                                              |
 |-------------------|----------------------------------------------------------|
 | `make build`      | Compila el proyecto sin ejecutar                         |
-| `make parse`      | Parsea `script.hulk` (o `SCRIPT=...`) y muestra el AST  |
+| `make compile`    | Alias de `make parse`                                    |
+| `make parse`      | Parsea y compila `script.hulk` (o `SCRIPT=...`)         |
+| `make execute`    | Ejecuta el binario generado en `build/`                 |
 | `make test`       | Ejecuta los tests del workspace                          |
 | `make clean`      | Limpia artefactos de build (cargo clean)                 |
 
@@ -102,6 +107,6 @@ BinaryOp: +
 2. **Agrega los nodos AST** necesarios en `src/parser/src/ast/` (atoms o expressions).
 3. **Agrega los tokens** necesarios en `src/parser/src/tokens/` si hacen falta.
 4. **Agrega las reglas** en `src/parser/src/grammar.lalrpop`.
-5. **Actualiza el Visitor** en `src/parser/src/ast/visitor/visitor.rs` y el printer.
+5. **Actualiza semántica y/o codegen** en `src/parser/src/semantic/` y `src/codegen/`.
 6. **Compila** con `make build` — LALRPOP generará el parser automáticamente.
-7. **Prueba** editando `script.hulk` y ejecutando `make parse`.
+7. **Prueba** editando `script.hulk` y ejecutando `make parse` o `make execute`.
