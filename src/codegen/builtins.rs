@@ -104,5 +104,28 @@ impl<'ctx> CodegenContext<'ctx> {
         // double hulk_pow(double base, double exp)
         let f = self.module.add_function("hulk_pow", binary_f64, None);
         self.functions.insert("__hulk_pow".into(), f);
+
+        // void hulk_cast_error(
+        //   const char* message,
+        //   const char* filename,
+        //   int line,
+        //   int col,
+        //   const char* source_line,
+        //   int marker_col,
+        //   int marker_len)
+        let cast_err_ty = void_ty.fn_type(
+            &[
+                ptr_meta,
+                ptr_meta,
+                i32_meta,
+                i32_meta,
+                ptr_meta,
+                i32_meta,
+                i32_meta,
+            ],
+            false,
+        );
+        let f = self.module.add_function("hulk_cast_error", cast_err_ty, None);
+        self.functions.insert("__hulk_cast_error".into(), f);
     }
 }
