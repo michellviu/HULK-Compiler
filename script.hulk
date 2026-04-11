@@ -1,41 +1,35 @@
-type Point(x: Number, y: Number) {
-    x = x;
-    y = y;
-
-    getX() => self.x;
-    getY() => self.y;
-
-    setX(x) => self.x := x;
-    setY(y) => self.y := y;
+type A {
+  
 }
 
-type PolarPoint(phi: Number, rho: Number) inherits Point(rho * sin(phi), rho * cos(phi)) {
-
-    rho = rho;
-    phi = phi;
-    
-    printrho() => print("rho: " @ self.rho);
-    printphi() => print("phi: " @ self.phi);
+type B inherits A {
+   
 }
 
-type Person(firstname: String, lastname: String) {
-    firstname = firstname;
-    lastname = lastname;
-
-    name() => self.firstname @@ self.lastname;
+type C inherits A {
+  
 }
 
-type Knight inherits Person {
-    name() => "Sir" @@ base();
-}
+let x : A = if (rand() < 0.5) new B() else new C() in
+    if (x is B)
+        let y : B = x as B in {
+            print("x is B");
+            print(x is B);
+            print(y is B);
+            print(x is A);
+            print(y is A);
+            print(x is C);
+            print(y is C);
+        }
+    else {
+        let z : C = x as C in {
+            print("x is C");
+            print(x is C);
+            print(z is C);
+            print(x is A);
+            print(z is A);
+            print(x is B);
+            print(z is B);
+        };
+    };
 
-
-{
-
-let pt = new PolarPoint(3,4) in
-    print("x: " @ pt.getX());
-
-let knight = new Knight("Lancelot", "Du Lac") in
-    print(knight.name());
-
-}
