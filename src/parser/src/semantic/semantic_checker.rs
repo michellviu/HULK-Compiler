@@ -24,6 +24,7 @@ pub fn check_semantics(
         symbols,
         errors: Vec::new(),
         in_method: false,
+        current_method: None,
     };
 
     // Analyse function bodies.
@@ -56,6 +57,7 @@ struct SemanticChecker<'a> {
     errors: Vec<CompilerError>,
     /// Whether we are currently inside a class method (for `self` checks).
     in_method: bool,
+    current_method: Option<String>,
 }
 
 impl<'a> SemanticChecker<'a> {
@@ -103,21 +105,38 @@ impl<'a> SemanticChecker<'a> {
             }
         }
 
+        if !class.parent_args.is_empty() {
+            if let Some(parent_name) = &class.parent {
+                if let Some(parent_info) = self.symbols.get_class(parent_name) {
+                    let expected = parent_info.params.len();
+                    let got = class.parent_args.len();
+                    if expected != got {
+                        self.errors.push(CompilerError::wrong_arity(
+                            parent_name,
+                            expected,
+                            got,
+                            class.span,
+                        ));
+                    }
+                }
+            }
+
+            self.symbols.push_scope();
+            self.define_effective_constructor_params(&class.name, class.span);
+            for arg in &class.parent_args {
+                self.check_expression(arg);
+            }
+            self.symbols.pop_scope();
+        }
+
         // Check attributes.
         for attr in &class.attributes {
             if let Some(ref ann) = attr.type_ann {
                 self.check_type_exists(ann, attr.span);
             }
-            // Attribute initializer runs in constructor scope with constructor params.
+            // Attribute initializer runs in constructor scope with effective constructor params.
             self.symbols.push_scope();
-            // Define constructor params.
-            for p in &class.params {
-                let t = match &p.type_ann {
-                    Some(a) => HulkType::from_name(a),
-                    None => HulkType::Unknown,
-                };
-                self.symbols.define_var(&p.name, t, p.span);
-            }
+            self.define_effective_constructor_params(&class.name, attr.span);
             self.in_method = true;
             self.check_expression(&attr.init);
             self.in_method = false;
@@ -126,6 +145,7 @@ impl<'a> SemanticChecker<'a> {
 
         // Check method bodies.
         for method in &class.methods {
+            self.check_override_signature(class, method);
             self.check_method(method);
         }
 
@@ -134,6 +154,7 @@ impl<'a> SemanticChecker<'a> {
 
     fn check_method(&mut self, method: &ast::Method) {
         self.in_method = true;
+        self.current_method = Some(method.name.clone());
         self.symbols.push_scope();
 
         // Define `self`.
@@ -164,6 +185,7 @@ impl<'a> SemanticChecker<'a> {
         let vars = self.symbols.pop_scope();
         self.warn_unused(&vars);
         self.in_method = false;
+        self.current_method = None;
     }
 
     // ── Body / expression body helpers ──────────────────────────
@@ -360,6 +382,11 @@ impl<'a> SemanticChecker<'a> {
     }
 
     fn check_function_call(&mut self, call: &ast::FunctionCall) {
+        if call.name == "base" {
+            self.check_base_call(call);
+            return;
+        }
+
         // Check function exists.
         match self.symbols.get_function(&call.name) {
             Some(func_info) => {
@@ -381,6 +408,54 @@ impl<'a> SemanticChecker<'a> {
         }
 
         // Check arguments.
+        for arg in &call.args {
+            self.check_expression(arg);
+        }
+    }
+
+    fn check_base_call(&mut self, call: &ast::FunctionCall) {
+        if !self.in_method {
+            self.errors.push(CompilerError::base_outside_method(call.span));
+            for arg in &call.args {
+                self.check_expression(arg);
+            }
+            return;
+        }
+
+        let class_name = match self.symbols.current_class.clone() {
+            Some(name) => name,
+            None => {
+                self.errors.push(CompilerError::base_outside_method(call.span));
+                return;
+            }
+        };
+        let method_name = self.current_method.clone().unwrap_or_default();
+
+        match self
+            .symbols
+            .resolve_parent_method(&class_name, &method_name)
+        {
+            Some((_owner, method_info)) => {
+                let expected = method_info.params.len();
+                let got = call.args.len();
+                if expected != got {
+                    self.errors.push(CompilerError::wrong_arity(
+                        "base",
+                        expected,
+                        got,
+                        call.span,
+                    ));
+                }
+            }
+            None => {
+                self.errors.push(CompilerError::undefined_base_method(
+                    &class_name,
+                    &method_name,
+                    call.span,
+                ));
+            }
+        }
+
         for arg in &call.args {
             self.check_expression(arg);
         }
@@ -424,6 +499,46 @@ impl<'a> SemanticChecker<'a> {
     fn check_type_exists(&mut self, name: &str, span: crate::tokens::Span) {
         if !self.symbols.type_exists(name) {
             self.errors.push(CompilerError::undefined_type(name, span));
+        }
+    }
+
+    fn define_effective_constructor_params(&mut self, class_name: &str, span: crate::tokens::Span) {
+        if let Some(class_info) = self.symbols.get_class(class_name).cloned() {
+            for (name, ty) in class_info.params {
+                self.symbols.define_var(&name, ty, span);
+            }
+        }
+    }
+
+    fn check_override_signature(&mut self, class: &ast::ClassDecl, method: &ast::Method) {
+        let parent_method = self
+            .symbols
+            .resolve_parent_method(&class.name, &method.name)
+            .map(|(_, m)| m);
+
+        let current_method = self
+            .symbols
+            .get_class(&class.name)
+            .and_then(|info| info.get_method(&method.name))
+            .cloned();
+
+        if let (Some(parent), Some(current)) = (parent_method, current_method) {
+            let same_len = parent.params.len() == current.params.len();
+            let same_types = same_len
+                && parent
+                    .params
+                    .iter()
+                    .zip(current.params.iter())
+                    .all(|((_, pt), (_, ct))| pt == ct);
+            let same_ret = parent.return_type == current.return_type;
+
+            if !(same_types && same_ret) {
+                self.errors.push(CompilerError::invalid_override_signature(
+                    &class.name,
+                    &method.name,
+                    method.span,
+                ));
+            }
         }
     }
 
