@@ -137,6 +137,7 @@ pub Expr: ast::Expression = {
     LetExpr,
     IfExpr,
     WhileExpr,
+    ForExpr,
     CaseExpr,
     AssignExpr,
 };
@@ -186,12 +187,25 @@ IfExpr: ast::Expression = {
     },
 };
 
-// ── while (else is optional) ────────────────────────────────────
+// ── while ───────────────────────────────────────────────────────
 
 WhileExpr: ast::Expression = {
     <s:@L> "while" "(" <cond:Expr> ")" <body:ExprBody> <e:@R> => {
         ast::Expression::While(Box::new(ast::WhileExpr {
             condition: cond,
+            body,
+            span: tokens::Position::new(s, e),
+        }))
+    },
+};
+
+// ── for ─────────────────────────────────────────────────────────
+
+ForExpr: ast::Expression = {
+    <s:@L> "for" "(" <var:Id> "in" <iterable:Expr> ")" <body:ExprBody> <e:@R> => {
+        ast::Expression::For(Box::new(ast::ForExpr {
+            var,
+            iterable,
             body,
             span: tokens::Position::new(s, e),
         }))
