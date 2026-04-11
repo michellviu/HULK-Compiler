@@ -11,6 +11,11 @@
 #include <math.h>
 #include <time.h>
 
+typedef struct {
+    long long cursor;
+    long long end;
+} HulkRange;
+
 /* ── Print functions ─────────────────────────────────────────────── */
 
 void hulk_print_number(double value) {
@@ -53,6 +58,39 @@ double hulk_rand(void) {
 
 double hulk_pow(double base, double exponent) {
     return pow(base, exponent);
+}
+
+/* ── Range iterable ─────────────────────────────────────────────── */
+
+void *hulk_range(double start, double end) {
+    HulkRange *it = (HulkRange *)malloc(sizeof(HulkRange));
+    if (!it) {
+        fprintf(stderr, "HULK runtime error: out of memory\n");
+        exit(1);
+    }
+    it->cursor = (long long)start;
+    it->end = (long long)end;
+    return (void *)it;
+}
+
+int hulk_range_next(void *iterable) {
+    HulkRange *it = (HulkRange *)iterable;
+    if (!it) {
+        return 0;
+    }
+    if (it->cursor < it->end) {
+        it->cursor += 1;
+        return 1;
+    }
+    return 0;
+}
+
+double hulk_range_current(void *iterable) {
+    HulkRange *it = (HulkRange *)iterable;
+    if (!it) {
+        return 0.0;
+    }
+    return (double)(it->cursor - 1);
 }
 
 /* ── String functions ────────────────────────────────────────────── */
