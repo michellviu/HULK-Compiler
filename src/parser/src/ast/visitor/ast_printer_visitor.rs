@@ -88,7 +88,7 @@ impl Visitor for AstPrinterVisitor {
             print!(")");
         }
         if let Some(ref parent) = class.parent {
-            print!(" is {}", parent);
+            print!(" inherits {}", parent);
         }
         println!();
         self.indent += 1;
