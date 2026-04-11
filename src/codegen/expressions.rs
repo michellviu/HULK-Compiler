@@ -3,7 +3,9 @@
 //! Every `gen_*` method returns `HulkValue<'ctx>` — `Some(val)` for
 //! expressions that produce a value, `None` for void expressions.
 
-use inkwell::values::{BasicMetadataValueEnum, BasicValue, BasicValueEnum};
+use inkwell::values::{
+    BasicMetadataValueEnum, BasicValue, BasicValueEnum, IntValue, PointerValue,
+};
 use inkwell::types::{BasicMetadataTypeEnum, BasicType};
 use inkwell::FloatPredicate;
 use inkwell::IntPredicate;
@@ -26,6 +28,8 @@ impl<'ctx> CodegenContext<'ctx> {
             ast::Expression::If(if_expr) => self.gen_if(if_expr),
             ast::Expression::While(while_expr) => self.gen_while(while_expr),
             ast::Expression::For(for_expr) => self.gen_for(for_expr),
+            ast::Expression::IsType(is_expr) => self.gen_is_type(is_expr),
+            ast::Expression::AsType(as_expr) => self.gen_as_type(as_expr),
             ast::Expression::Case(_case_expr) => {
                 // Case/pattern matching — simplified: evaluate first branch.
                 // Full implementation would need runtime type tags.
@@ -280,6 +284,198 @@ impl<'ctx> CodegenContext<'ctx> {
                 Some(v.into())
             }
         }
+    }
+
+    // ── Type test / cast ────────────────────────────────────────
+
+    fn gen_is_type(&mut self, is_expr: &ast::IsExpr) -> HulkValue<'ctx> {
+        let operand = self.gen_expression(&is_expr.expr)?;
+        let source_type = self.infer_expression_type(&is_expr.expr);
+        let target_type = HulkType::from_name(&is_expr.type_name);
+
+        let result = match (&source_type, &target_type) {
+            (HulkType::Class(_) | HulkType::Object, HulkType::Class(target_class)) => {
+                self.gen_instanceof_class(operand.into_pointer_value(), target_class)
+            }
+            (HulkType::Class(_) | HulkType::Object, HulkType::Object) => {
+                self.bool_type().const_int(1, false)
+            }
+            _ => {
+                let conforms = self.symbols.conforms_to(&source_type, &target_type);
+                self.bool_type().const_int(if conforms { 1 } else { 0 }, false)
+            }
+        };
+
+        Some(result.into())
+    }
+
+    fn gen_as_type(&mut self, as_expr: &ast::AsExpr) -> HulkValue<'ctx> {
+        let operand = self.gen_expression(&as_expr.expr)?;
+        let source_type = self.infer_expression_type(&as_expr.expr);
+        let target_type = HulkType::from_name(&as_expr.type_name);
+
+        if source_type.is_error() || target_type.is_error() {
+            return Some(operand);
+        }
+
+        match (&source_type, &target_type) {
+            (HulkType::Class(_) | HulkType::Object, HulkType::Class(target_class)) => {
+                let is_valid = self.gen_instanceof_class(operand.into_pointer_value(), target_class);
+
+                let func = self.current_function();
+                let ok_bb = self.context.append_basic_block(func, "cast.ok");
+                let fail_bb = self.context.append_basic_block(func, "cast.fail");
+                let merge_bb = self.context.append_basic_block(func, "cast.merge");
+
+                self.builder
+                    .build_conditional_branch(is_valid, ok_bb, fail_bb)
+                    .unwrap();
+
+                self.builder.position_at_end(fail_bb);
+                self.emit_cast_error(
+                    &format!(
+                    "No se puede convertir el valor a '{}'",
+                    as_expr.type_name
+                    ),
+                    as_expr.span,
+                );
+                self.builder.build_unreachable().unwrap();
+
+                self.builder.position_at_end(ok_bb);
+                self.builder.build_unconditional_branch(merge_bb).unwrap();
+
+                self.builder.position_at_end(merge_bb);
+                Some(operand)
+            }
+            (HulkType::Class(_) | HulkType::Object, HulkType::Object) => Some(operand),
+            _ => {
+                if source_type == target_type {
+                    Some(operand)
+                } else {
+                    self.emit_cast_error(
+                        &format!(
+                            "No se puede convertir '{}' a '{}'",
+                            source_type.type_name(),
+                            target_type.type_name(),
+                        ),
+                        as_expr.span,
+                    );
+                    self.builder.build_unreachable().unwrap();
+                    None
+                }
+            }
+        }
+    }
+
+    fn gen_instanceof_class(
+        &mut self,
+        object_ptr: PointerValue<'ctx>,
+        target_class: &str,
+    ) -> IntValue<'ctx> {
+        let func = self.current_function();
+        let check_bb = self.context.append_basic_block(func, "is.check");
+        let null_bb = self.context.append_basic_block(func, "is.null");
+        let merge_bb = self.context.append_basic_block(func, "is.merge");
+
+        let not_null = self
+            .builder
+            .build_is_not_null(object_ptr, "is_not_null")
+            .unwrap();
+        self.builder
+            .build_conditional_branch(not_null, check_bb, null_bb)
+            .unwrap();
+
+        self.builder.position_at_end(null_bb);
+        self.builder.build_unconditional_branch(merge_bb).unwrap();
+        let null_block = self.builder.get_insert_block().unwrap();
+
+        self.builder.position_at_end(check_bb);
+        let header_ty = self
+            .context
+            .struct_type(&[self.ptr_type().into(), self.context.i64_type().into()], false);
+        let type_id_ptr = self
+            .builder
+            .build_struct_gep(header_ty, object_ptr, 1, "obj_type_id_ptr")
+            .unwrap();
+        let i64_ty = self.context.i64_type();
+        let obj_type_id = self
+            .builder
+            .build_load(i64_ty, type_id_ptr, "obj_type_id")
+            .unwrap();
+
+        let mut class_names: Vec<String> = self.vtables.keys().cloned().collect();
+        class_names.sort();
+
+        let mut matches_target = self.bool_type().const_zero();
+        for class_name in class_names {
+            let conforms = self.symbols.conforms_to(
+                &HulkType::Class(class_name.clone()),
+                &HulkType::Class(target_class.to_string()),
+            );
+            if !conforms {
+                continue;
+            }
+
+            if let Some(candidate_id) = self.class_type_ids.get(&class_name) {
+                let candidate_i = i64_ty.const_int(*candidate_id, false);
+                let eq = self
+                    .builder
+                    .build_int_compare(
+                        IntPredicate::EQ,
+                        obj_type_id.into_int_value(),
+                        candidate_i,
+                        "is_match",
+                    )
+                    .unwrap();
+                matches_target = self
+                    .builder
+                    .build_or(matches_target, eq, "is_or")
+                    .unwrap();
+            }
+        }
+
+        self.builder.build_unconditional_branch(merge_bb).unwrap();
+        let check_block = self.builder.get_insert_block().unwrap();
+
+        self.builder.position_at_end(merge_bb);
+        let phi = self.builder.build_phi(self.bool_type(), "is_result").unwrap();
+        let false_val = self.bool_type().const_zero();
+        let refs: Vec<(&dyn BasicValue<'ctx>, inkwell::basic_block::BasicBlock<'ctx>)> = vec![
+            (&matches_target as &dyn BasicValue<'ctx>, check_block),
+            (&false_val as &dyn BasicValue<'ctx>, null_block),
+        ];
+        phi.add_incoming(&refs);
+
+        phi.as_basic_value().into_int_value()
+    }
+
+    fn emit_cast_error(&mut self, message: &str, span: tokens::Span) {
+        let cast_error_fn = *self.functions.get("__hulk_cast_error").unwrap();
+
+        let (line, col, source_line, marker_col, marker_len) =
+            self.runtime_site_from_span(span);
+
+        let source_filename = self.source_filename.clone();
+        let msg = self.get_or_create_string(message);
+        let file = self.get_or_create_string(&source_filename);
+        let line_text = self.get_or_create_string(&source_line);
+        let i32_ty = self.context.i32_type();
+
+        self.builder
+            .build_call(
+                cast_error_fn,
+                &[
+                    msg.into(),
+                    file.into(),
+                    i32_ty.const_int(line as u64, false).into(),
+                    i32_ty.const_int(col as u64, false).into(),
+                    line_text.into(),
+                    i32_ty.const_int(marker_col as u64, false).into(),
+                    i32_ty.const_int(marker_len as u64, false).into(),
+                ],
+                "cast_error",
+            )
+            .unwrap();
     }
 
     // ── String concatenation ─────────────────────────────────────
@@ -930,28 +1126,10 @@ impl<'ctx> CodegenContext<'ctx> {
         expr: &ast::Expression,
         llvm_val: &HulkValue<'ctx>,
     ) -> HulkType {
-        // 1. Check AST-level patterns that produce known types.
-        match expr {
-            ast::Expression::NewInstance(inst) => {
-                return HulkType::Class(inst.type_name.clone());
-            }
-            ast::Expression::MethodCall(call) => {
-                // Determine class name of object, then look up method return type.
-                if let Some(class_name) = self.infer_class_name(&call.object) {
-                    if let Some((_owner, method_info)) =
-                        self.symbols.resolve_method(&class_name, &call.method)
-                    {
-                        return method_info.return_type.clone();
-                    }
-                }
-            }
-            ast::Expression::FunctionCall(call) => {
-                // Look up function return type from symbol table.
-                if let Some(func_info) = self.symbols.get_function(&call.name) {
-                    return func_info.return_type.clone();
-                }
-            }
-            _ => {}
+        // 1. Prefer semantic type inference from AST patterns.
+        let inferred = self.infer_expression_type(expr);
+        if !matches!(inferred, HulkType::Unknown) {
+            return inferred;
         }
 
         // 2. Fall back to LLVM value type inspection.
@@ -967,6 +1145,59 @@ impl<'ctx> CodegenContext<'ctx> {
             }
         } else {
             HulkType::Number
+        }
+    }
+
+    /// Best-effort semantic type inference for codegen-only decisions.
+    fn infer_expression_type(&self, expr: &ast::Expression) -> HulkType {
+        match expr {
+            ast::Expression::Atom(atom) => match atom.as_ref() {
+                ast::atoms::atom::Atom::NumberLiteral(_) => HulkType::Number,
+                ast::atoms::atom::Atom::BooleanLiteral(_) => HulkType::Boolean,
+                ast::atoms::atom::Atom::StringLiteral(_) => HulkType::String,
+                ast::atoms::atom::Atom::Variable(id) => {
+                    if id.name == "self" {
+                        self.current_class
+                            .as_ref()
+                            .map(|c| HulkType::Class(c.clone()))
+                            .unwrap_or(HulkType::Object)
+                    } else {
+                        self.symbols.var_type(&id.name).unwrap_or(HulkType::Unknown)
+                    }
+                }
+                ast::atoms::atom::Atom::Group(group) => {
+                    self.infer_expression_type(&group.expression)
+                }
+            },
+            ast::Expression::NewInstance(inst) => HulkType::Class(inst.type_name.clone()),
+            ast::Expression::FunctionCall(call) => self
+                .symbols
+                .get_function(&call.name)
+                .map(|f| f.return_type.clone())
+                .unwrap_or(HulkType::Unknown),
+            ast::Expression::MethodCall(call) => {
+                if let Some(class_name) = self.infer_class_name(&call.object) {
+                    self.symbols
+                        .resolve_method(&class_name, &call.method)
+                        .map(|(_, m)| m.return_type)
+                        .unwrap_or(HulkType::Unknown)
+                } else {
+                    HulkType::Unknown
+                }
+            }
+            ast::Expression::MemberAccess(access) => {
+                if let Some(class_name) = self.infer_class_name(&access.object) {
+                    self.symbols
+                        .resolve_attribute(&class_name, &access.member)
+                        .map(|(_, a)| a.hulk_type)
+                        .unwrap_or(HulkType::Unknown)
+                } else {
+                    HulkType::Unknown
+                }
+            }
+            ast::Expression::IsType(_) => HulkType::Boolean,
+            ast::Expression::AsType(as_expr) => HulkType::from_name(&as_expr.type_name),
+            _ => HulkType::Unknown,
         }
     }
 
@@ -999,6 +1230,13 @@ impl<'ctx> CodegenContext<'ctx> {
                     }
                 }
                 None
+            }
+            ast::Expression::AsType(as_expr) => {
+                if let HulkType::Class(name) = HulkType::from_name(&as_expr.type_name) {
+                    Some(name)
+                } else {
+                    None
+                }
             }
             _ => None,
         }
