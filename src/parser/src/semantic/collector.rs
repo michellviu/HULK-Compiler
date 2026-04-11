@@ -223,6 +223,8 @@ impl<'a> Visitor for CollectorVisitor<'a> {
     fn visit_if_expr(&mut self, _if_expr: &ast::IfExpr) {}
     fn visit_while_expr(&mut self, _while_expr: &ast::WhileExpr) {}
     fn visit_for_expr(&mut self, _for_expr: &ast::ForExpr) {}
+    fn visit_is_expr(&mut self, _is_expr: &ast::IsExpr) {}
+    fn visit_as_expr(&mut self, _as_expr: &ast::AsExpr) {}
     fn visit_case_expr(&mut self, _case_expr: &ast::CaseExpr) {}
     fn visit_assign_expr(&mut self, _assign: &ast::AssignExpr) {}
     fn visit_member_access(&mut self, _access: &ast::MemberAccess) {}

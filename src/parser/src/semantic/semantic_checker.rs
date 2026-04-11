@@ -228,6 +228,8 @@ impl<'a> SemanticChecker<'a> {
             ast::Expression::If(if_expr) => self.check_if(if_expr),
             ast::Expression::While(while_expr) => self.check_while(while_expr),
             ast::Expression::For(for_expr) => self.check_for(for_expr),
+            ast::Expression::IsType(is_expr) => self.check_is(is_expr),
+            ast::Expression::AsType(as_expr) => self.check_as(as_expr),
             ast::Expression::Case(case_expr) => self.check_case(case_expr),
             ast::Expression::Assign(assign) => self.check_assign(assign),
             ast::Expression::FunctionCall(call) => self.check_function_call(call),
@@ -333,6 +335,16 @@ impl<'a> SemanticChecker<'a> {
         self.check_expr_body(&for_expr.body);
         let vars = self.symbols.pop_scope();
         self.warn_unused(&vars);
+    }
+
+    fn check_is(&mut self, is_expr: &ast::IsExpr) {
+        self.check_expression(&is_expr.expr);
+        self.check_type_exists(&is_expr.type_name, is_expr.span);
+    }
+
+    fn check_as(&mut self, as_expr: &ast::AsExpr) {
+        self.check_expression(&as_expr.expr);
+        self.check_type_exists(&as_expr.type_name, as_expr.span);
     }
 
     fn check_case(&mut self, case_expr: &ast::CaseExpr) {

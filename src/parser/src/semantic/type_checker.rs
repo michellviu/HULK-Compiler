@@ -263,6 +263,8 @@ impl<'a> TypeChecker<'a> {
             ast::Expression::If(if_expr) => self.infer_if(if_expr),
             ast::Expression::While(while_expr) => self.infer_while(while_expr),
             ast::Expression::For(for_expr) => self.infer_for(for_expr),
+            ast::Expression::IsType(is_expr) => self.infer_is(is_expr),
+            ast::Expression::AsType(as_expr) => self.infer_as(as_expr),
             ast::Expression::Case(case_expr) => self.infer_case(case_expr),
             ast::Expression::Assign(assign) => self.infer_assign(assign),
             ast::Expression::FunctionCall(call) => self.infer_function_call(call),
@@ -509,6 +511,43 @@ impl<'a> TypeChecker<'a> {
         self.symbols.pop_scope();
 
         body_type
+    }
+
+    fn infer_is(&mut self, is_expr: &ast::IsExpr) -> HulkType {
+        self.infer_expression(&is_expr.expr);
+        HulkType::Boolean
+    }
+
+    fn infer_as(&mut self, as_expr: &ast::AsExpr) -> HulkType {
+        let source_type = self.infer_expression(&as_expr.expr);
+        let target_type = HulkType::from_name(&as_expr.type_name);
+
+        if source_type.is_error() || target_type.is_error() {
+            return HulkType::Error;
+        }
+
+        match (&source_type, &target_type) {
+            // Primitive casts are only valid when identity.
+            (HulkType::Number, HulkType::Number)
+            | (HulkType::String, HulkType::String)
+            | (HulkType::Boolean, HulkType::Boolean) => {}
+
+            // Class/Object casts are runtime-checked.
+            (HulkType::Class(_), HulkType::Class(_))
+            | (HulkType::Class(_), HulkType::Object)
+            | (HulkType::Object, HulkType::Class(_))
+            | (HulkType::Object, HulkType::Object) => {}
+
+            _ => {
+                self.errors.push(CompilerError::type_mismatch(
+                    &target_type.type_name(),
+                    &source_type.type_name(),
+                    as_expr.span,
+                ));
+            }
+        }
+
+        target_type
     }
 
     fn infer_case(&mut self, case_expr: &ast::CaseExpr) -> HulkType {
