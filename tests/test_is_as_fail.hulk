@@ -1,0 +1,11 @@
+type Animal {
+}
+
+type Bird inherits Animal {
+}
+
+let x = new Animal() in {
+    let b = x as Bird in {
+        print(b);
+    };
+};
