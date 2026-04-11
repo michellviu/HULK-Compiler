@@ -26,6 +26,12 @@ impl<'ctx> CodegenContext<'ctx> {
         //          topological order (parents before children).
         let ordered = self.topo_sort_classes(classes);
 
+        // Assign stable runtime IDs for dynamic type tests/casts.
+        for (idx, class_name) in ordered.iter().enumerate() {
+            self.class_type_ids
+                .insert(class_name.clone(), (idx + 1) as u64);
+        }
+
         for class_name in &ordered {
             let class = classes.iter().find(|c| &c.name == class_name).unwrap();
             self.define_class_struct(class);
@@ -123,8 +129,10 @@ impl<'ctx> CodegenContext<'ctx> {
         let ptr_ty = self.ptr_type();
 
         // Slot 0: vtable pointer (ptr).
-        let mut field_types: Vec<BasicTypeEnum<'ctx>> = vec![ptr_ty.into()];
-        let mut field_index: u32 = 1;
+        // Slot 1: runtime class type id (i64).
+        let mut field_types: Vec<BasicTypeEnum<'ctx>> =
+            vec![ptr_ty.into(), self.context.i64_type().into()];
+        let mut field_index: u32 = 2;
 
         // Get all attributes from symbol table (includes inherited via resolve).
         if let Some(class_info) = self.symbols.get_class(&class.name).cloned() {
@@ -451,6 +459,18 @@ impl<'ctx> CodegenContext<'ctx> {
                 .build_struct_gep(struct_ty, instance_ptr, 0, "vtable")
                 .unwrap();
             self.builder.build_store(vtable_field_ptr, vtable_ptr).unwrap();
+        }
+
+        // Store runtime class id in slot 1.
+        if let Some(type_id) = self.class_type_ids.get(&class.name) {
+            let type_id_field_ptr = self
+                .builder
+                .build_struct_gep(struct_ty, instance_ptr, 1, "type_id")
+                .unwrap();
+            let type_id_val = self.context.i64_type().const_int(*type_id, false);
+            self.builder
+                .build_store(type_id_field_ptr, type_id_val)
+                .unwrap();
         }
 
         // Return the instance pointer.
