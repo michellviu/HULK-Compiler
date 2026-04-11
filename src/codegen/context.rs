@@ -46,6 +46,8 @@ pub struct CodegenContext<'ctx> {
     pub class_structs: HashMap<String, StructType<'ctx>>,
     /// Map from class name → vtable global pointer.
     pub vtables: HashMap<String, PointerValue<'ctx>>,
+    /// Per-class ordered vtable entries: (method name, owner class).
+    pub vtable_layouts: HashMap<String, Vec<(String, String)>>,
     /// Map from (class, method_name) → index in vtable.
     pub vtable_indices: HashMap<(String, String), usize>,
     /// Ordered list of attribute names per class (for GEP indexing).
@@ -58,6 +60,7 @@ pub struct CodegenContext<'ctx> {
 
     // ── Current class (for `self` resolution) ────────────────────
     pub current_class: Option<String>,
+    pub current_method: Option<String>,
 }
 
 impl<'ctx> CodegenContext<'ctx> {
@@ -74,10 +77,12 @@ impl<'ctx> CodegenContext<'ctx> {
             functions: HashMap::new(),
             class_structs: HashMap::new(),
             vtables: HashMap::new(),
+            vtable_layouts: HashMap::new(),
             vtable_indices: HashMap::new(),
             class_field_indices: HashMap::new(),
             string_constants: HashMap::new(),
             current_class: None,
+            current_method: None,
         }
     }
 

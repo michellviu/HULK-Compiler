@@ -43,13 +43,19 @@ impl<'ctx> CodegenContext<'ctx> {
             self.declare_methods(class);
         }
 
-        // Phase 4: Generate constructor functions.
+        // Phase 4: Materialize vtable globals now that all methods exist.
+        for class_name in &ordered {
+            let class = classes.iter().find(|c| &c.name == class_name).unwrap();
+            self.materialize_vtable(class);
+        }
+
+        // Phase 5: Generate constructor functions.
         for class_name in &ordered {
             let class = classes.iter().find(|c| &c.name == class_name).unwrap();
             self.gen_constructor(class);
         }
 
-        // Phase 5: Generate method bodies.
+        // Phase 6: Generate method bodies.
         for class_name in &ordered {
             let class = classes.iter().find(|c| &c.name == class_name).unwrap();
             self.gen_method_bodies(class);
@@ -157,32 +163,14 @@ impl<'ctx> CodegenContext<'ctx> {
         self.class_structs.insert(class.name.clone(), struct_ty);
     }
 
-    /// Collects all methods (including inherited) and builds a vtable global.
+    /// Collects all methods (including inherited) and stores the vtable layout.
     fn build_vtable(&mut self, class: &ast::ClassDecl) {
-        // Collect method list: start from parent's vtable, override as needed.
-        let mut method_list: Vec<(String, String)> = Vec::new(); // (method_name, owner_class)
-
-        if let Some(ref parent_name) = class.parent {
-            // Copy parent's vtable entries.
-            if let Some(parent_class_info) = self.symbols.get_class(parent_name).cloned() {
-                let ancestors = self.symbols.ancestors(parent_name);
-                for ancestor in ancestors.iter().rev() {
-                    if let Some(info) = self.symbols.get_class(ancestor) {
-                        for (method_name, _) in &info.methods {
-                            if !method_list.iter().any(|(m, _)| m == method_name) {
-                                method_list.push((method_name.clone(), ancestor.to_string()));
-                            }
-                        }
-                    }
-                }
-                // Parent's own methods.
-                for (method_name, _) in &parent_class_info.methods {
-                    if !method_list.iter().any(|(m, _)| m == method_name) {
-                        method_list.push((method_name.clone(), parent_name.clone()));
-                    }
-                }
-            }
-        }
+        // Collect method list: copy parent layout first, then override/add own methods.
+        let mut method_list: Vec<(String, String)> = class
+            .parent
+            .as_ref()
+            .and_then(|p| self.vtable_layouts.get(p).cloned())
+            .unwrap_or_default();
 
         // Override or add own methods.
         for method in &class.methods {
@@ -199,31 +187,77 @@ impl<'ctx> CodegenContext<'ctx> {
                 .insert((class.name.clone(), method_name.clone()), idx);
         }
 
-        // We'll create the actual vtable global after methods are declared.
-        // For now, store the method list and create later in gen_constructor.
+        self.vtable_layouts
+            .insert(class.name.clone(), method_list);
+    }
+
+    fn materialize_vtable(&mut self, class: &ast::ClassDecl) {
+        let ptr_ty = self.ptr_type();
+        let entries = self
+            .vtable_layouts
+            .get(&class.name)
+            .cloned()
+            .unwrap_or_default();
+
+        let array_ty = ptr_ty.array_type(entries.len() as u32);
+        let mut values = Vec::with_capacity(entries.len());
+
+        for (method_name, owner_class) in entries {
+            let method_llvm_name = format!("__{}__{}", owner_class, method_name);
+            if let Some(&llvm_fn) = self.functions.get(&method_llvm_name) {
+                values.push(llvm_fn.as_global_value().as_pointer_value());
+            } else {
+                values.push(ptr_ty.const_null());
+            }
+        }
+
+        let init = ptr_ty.const_array(&values);
+        let global = self
+            .module
+            .add_global(array_ty, None, &format!("__vtable_{}", class.name));
+        global.set_initializer(&init);
+        global.set_constant(true);
+
+        self.vtables
+            .insert(class.name.clone(), global.as_pointer_value());
     }
 
     /// Forward-declares all methods of a class as LLVM functions.
     fn declare_methods(&mut self, class: &ast::ClassDecl) {
+        let class_info = self.symbols.get_class(&class.name).cloned();
+
         for method in &class.methods {
             let method_llvm_name = format!("__{}__{}", class.name, method.name);
+            let method_info = class_info
+                .as_ref()
+                .and_then(|info| info.get_method(&method.name))
+                .cloned();
 
             // First parameter is always `self` (ptr).
             let mut param_types: Vec<BasicMetadataTypeEnum<'ctx>> =
                 vec![self.ptr_type().into()];
 
-            for p in &method.params {
-                let ht = match &p.type_ann {
-                    Some(ann) => HulkType::from_name(ann),
-                    None => HulkType::Number,
-                };
-                param_types.push(self.hulk_type_to_meta(&ht));
+            if let Some(info) = &method_info {
+                for (_, ht) in &info.params {
+                    param_types.push(self.hulk_type_to_meta(ht));
+                }
+            } else {
+                for p in &method.params {
+                    let ht = match &p.type_ann {
+                        Some(ann) => HulkType::from_name(ann),
+                        None => HulkType::Number,
+                    };
+                    param_types.push(self.hulk_type_to_meta(&ht));
+                }
             }
 
-            let ret_type = match &method.return_type {
-                Some(ann) => HulkType::from_name(ann),
-                None => HulkType::Void,
-            };
+            let ret_type = method_info
+                .as_ref()
+                .map(|m| m.return_type.clone())
+                .unwrap_or_else(|| match &method.return_type {
+                    Some(ann) => HulkType::from_name(ann),
+                    None => HulkType::Void,
+                });
 
             let fn_type = if Self::is_void_type(&ret_type) {
                 self.void_type().fn_type(&param_types, false)
@@ -241,18 +275,16 @@ impl<'ctx> CodegenContext<'ctx> {
     pub fn gen_constructor(&mut self, class: &ast::ClassDecl) {
         let ctor_name = format!("__{}_new", class.name);
         let ptr_ty = self.ptr_type();
+        let class_info = self.symbols.get_class(&class.name).cloned();
+        let ctor_params = class_info
+            .as_ref()
+            .map(|c| c.params.clone())
+            .unwrap_or_default();
 
         // Constructor params.
-        let param_types: Vec<BasicMetadataTypeEnum<'ctx>> = class
-            .params
+        let param_types: Vec<BasicMetadataTypeEnum<'ctx>> = ctor_params
             .iter()
-            .map(|p| {
-                let ht = match &p.type_ann {
-                    Some(ann) => HulkType::from_name(ann),
-                    None => HulkType::Number,
-                };
-                self.hulk_type_to_meta(&ht)
-            })
+            .map(|(_, ht)| self.hulk_type_to_meta(ht))
             .collect();
 
         let fn_type = ptr_ty.fn_type(&param_types, false);
@@ -266,18 +298,14 @@ impl<'ctx> CodegenContext<'ctx> {
         self.current_class = Some(class.name.clone());
 
         // Bind constructor params.
-        for (i, param) in class.params.iter().enumerate() {
-            let ht = match &param.type_ann {
-                Some(ann) => HulkType::from_name(ann),
-                None => HulkType::Number,
-            };
+        for (i, (param_name, ht)) in ctor_params.iter().enumerate() {
             let llvm_ty = self.hulk_type_to_llvm(&ht);
             let alloca =
-                self.create_entry_block_alloca(ctor_func, &param.name, llvm_ty);
+                self.create_entry_block_alloca(ctor_func, param_name, llvm_ty);
             self.builder
                 .build_store(alloca, ctor_func.get_nth_param(i as u32).unwrap())
                 .unwrap();
-            self.set_variable(&param.name, alloca, llvm_ty);
+            self.set_variable(param_name, alloca, llvm_ty);
         }
 
         // Allocate the instance.
@@ -299,6 +327,107 @@ impl<'ctx> CodegenContext<'ctx> {
         self.builder.build_store(self_alloca, instance_ptr).unwrap();
         self.set_variable("self", self_alloca, ptr_ty.into());
 
+        // Initialize inherited attributes by running parent constructor first.
+        if let Some(parent_name) = class.parent.as_ref().filter(|p| p.as_str() != "Object") {
+            let parent_ctor_name = format!("__{}_new", parent_name);
+            if let Some(&parent_ctor_fn) = self.functions.get(&parent_ctor_name) {
+                let parent_info = self.symbols.get_class(parent_name).cloned();
+                let mut parent_args_vals: Vec<inkwell::values::BasicMetadataValueEnum<'ctx>> =
+                    Vec::new();
+
+                if !class.parent_args.is_empty() {
+                    for arg in &class.parent_args {
+                        if let Some(v) = self.gen_expression(arg) {
+                            parent_args_vals.push(v.into());
+                        }
+                    }
+                } else if let Some(parent_info) = &parent_info {
+                    for (idx, (parent_param_name, parent_param_type)) in
+                        parent_info.params.iter().enumerate()
+                    {
+                        let fallback_name = ctor_params.get(idx).map(|(n, _)| n.as_str());
+                        let source_name = if self.get_variable(parent_param_name).is_some() {
+                            Some(parent_param_name.as_str())
+                        } else {
+                            fallback_name
+                        };
+
+                        let value = if let Some(name) = source_name {
+                            if let Some((alloca, llvm_ty)) = self.get_variable(name) {
+                                self.builder.build_load(llvm_ty, alloca, name).ok()
+                            } else {
+                                None
+                            }
+                        } else {
+                            None
+                        };
+
+                        parent_args_vals.push(
+                            value
+                                .unwrap_or_else(|| self.default_value(parent_param_type))
+                                .into(),
+                        );
+                    }
+                }
+
+                let parent_instance = self
+                    .builder
+                    .build_call(parent_ctor_fn, &parent_args_vals, "parent_instance")
+                    .unwrap()
+                    .try_as_basic_value()
+                    .left()
+                    .map(|v| v.into_pointer_value());
+
+                if let (Some(parent_instance_ptr), Some(parent_info)) = (parent_instance, parent_info)
+                {
+                    let parent_struct_ty = self.class_structs.get(parent_name).unwrap().clone();
+                    let ancestors = self.symbols.ancestors(parent_name);
+
+                    for ancestor_name in ancestors.iter().rev() {
+                        if let Some(ancestor_info) = self.symbols.get_class(ancestor_name) {
+                            for attr in &ancestor_info.attributes {
+                                let parent_idx = self
+                                    .class_field_indices
+                                    .get(&(parent_info.name.clone(), attr.name.clone()))
+                                    .copied();
+                                let child_idx = self
+                                    .class_field_indices
+                                    .get(&(class.name.clone(), attr.name.clone()))
+                                    .copied();
+
+                                if let (Some(pidx), Some(cidx)) = (parent_idx, child_idx) {
+                                    let attr_ty = self.hulk_type_to_llvm(&attr.hulk_type);
+                                    let parent_field_ptr = self
+                                        .builder
+                                        .build_struct_gep(
+                                            parent_struct_ty,
+                                            parent_instance_ptr,
+                                            pidx,
+                                            &format!("parent_{}", attr.name),
+                                        )
+                                        .unwrap();
+                                    let child_field_ptr = self
+                                        .builder
+                                        .build_struct_gep(
+                                            struct_ty,
+                                            instance_ptr,
+                                            cidx,
+                                            &format!("child_{}", attr.name),
+                                        )
+                                        .unwrap();
+                                    let value = self
+                                        .builder
+                                        .build_load(attr_ty, parent_field_ptr, "inherited_attr")
+                                        .unwrap();
+                                    self.builder.build_store(child_field_ptr, value).unwrap();
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         // Initialize attributes.
         for attr in &class.attributes {
             let init_val = self.gen_expression(&attr.init);
@@ -313,6 +442,15 @@ impl<'ctx> CodegenContext<'ctx> {
                     self.builder.build_store(field_ptr, val).unwrap();
                 }
             }
+        }
+
+        // Store class vtable pointer in slot 0.
+        if let Some(&vtable_ptr) = self.vtables.get(&class.name) {
+            let vtable_field_ptr = self
+                .builder
+                .build_struct_gep(struct_ty, instance_ptr, 0, "vtable")
+                .unwrap();
+            self.builder.build_store(vtable_field_ptr, vtable_ptr).unwrap();
         }
 
         // Return the instance pointer.
@@ -334,11 +472,17 @@ impl<'ctx> CodegenContext<'ctx> {
     fn gen_method_body(&mut self, class: &ast::ClassDecl, method: &ast::Method) {
         let method_llvm_name = format!("__{}__{}", class.name, method.name);
         let llvm_func = *self.functions.get(&method_llvm_name).unwrap();
+        let method_info = self
+            .symbols
+            .get_class(&class.name)
+            .and_then(|info| info.get_method(&method.name))
+            .cloned();
         let entry_bb = self.context.append_basic_block(llvm_func, "entry");
         self.builder.position_at_end(entry_bb);
 
         self.push_scope();
         self.current_class = Some(class.name.clone());
+        self.current_method = Some(method.name.clone());
 
         // Param 0 is `self`.
         let self_ptr = llvm_func.get_nth_param(0).unwrap().into_pointer_value();
@@ -350,10 +494,13 @@ impl<'ctx> CodegenContext<'ctx> {
 
         // Bind other parameters.
         for (i, param) in method.params.iter().enumerate() {
-            let ht = match &param.type_ann {
-                Some(ann) => HulkType::from_name(ann),
-                None => HulkType::Number,
-            };
+            let ht = method_info
+                .as_ref()
+                .and_then(|info| info.params.get(i).map(|(_, t)| t.clone()))
+                .unwrap_or_else(|| match &param.type_ann {
+                    Some(ann) => HulkType::from_name(ann),
+                    None => HulkType::Number,
+                });
             let llvm_ty = self.hulk_type_to_llvm(&ht);
             let alloca =
                 self.create_entry_block_alloca(llvm_func, &param.name, llvm_ty);
@@ -370,10 +517,13 @@ impl<'ctx> CodegenContext<'ctx> {
         let body_val = self.gen_body(&method.body);
 
         // Build return.
-        let ret_type = match &method.return_type {
-            Some(ann) => HulkType::from_name(ann),
-            None => HulkType::Void,
-        };
+        let ret_type = method_info
+            .as_ref()
+            .map(|m| m.return_type.clone())
+            .unwrap_or_else(|| match &method.return_type {
+                Some(ann) => HulkType::from_name(ann),
+                None => HulkType::Void,
+            });
 
         let current_bb = self.builder.get_insert_block().unwrap();
         if current_bb.get_terminator().is_none() {
@@ -388,6 +538,7 @@ impl<'ctx> CodegenContext<'ctx> {
         }
 
         self.current_class = None;
+        self.current_method = None;
         self.pop_scope();
     }
 }
