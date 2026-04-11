@@ -30,6 +30,10 @@ pub fn collect_declarations(
     let cycle_errors = check_inheritance_cycles(&collector.symbols);
     collector.errors.extend(cycle_errors);
 
+    // Resolve constructor signatures after inheritance graph is known.
+    let ctor_errors = resolve_constructor_signatures(program, collector.symbols);
+    collector.errors.extend(ctor_errors);
+
     collector.errors
 }
 
@@ -62,14 +66,6 @@ impl<'a> Visitor for CollectorVisitor<'a> {
                 class.span,
             ));
             return;
-        }
-
-        // Check that the parent type exists (if specified).
-        if let Some(ref parent) = class.parent {
-            if !self.symbols.type_exists(parent) && !is_forward_class(parent, &class.name) {
-                // The parent might be declared later; we allow it for now
-                // and validate after all classes are collected.
-            }
         }
 
         // Resolve constructor parameter types.
@@ -243,12 +239,6 @@ impl<'a> Visitor for CollectorVisitor<'a> {
 // Post-collection validation
 // ═══════════════════════════════════════════════════════════════════
 
-/// Helper: we allow forward references for now, this just avoids false
-/// positives during collection.
-fn is_forward_class(_parent: &str, _child: &str) -> bool {
-    true
-}
-
 /// Validates that all parent types exist and there are no inheritance cycles.
 fn check_inheritance_cycles(symbols: &SymbolTable) -> Vec<CompilerError> {
     let mut errors = Vec::new();
@@ -264,6 +254,9 @@ fn check_inheritance_cycles(symbols: &SymbolTable) -> Vec<CompilerError> {
 
         // Check parent exists.
         if let Some(ref parent) = class.parent {
+            if matches!(parent.as_str(), "Number" | "String" | "Boolean") {
+                errors.push(CompilerError::invalid_inheritance(parent, class.span));
+            }
             if !symbols.type_exists(parent) {
                 errors.push(CompilerError::undefined_type(parent, class.span));
             }
@@ -284,6 +277,130 @@ fn check_inheritance_cycles(symbols: &SymbolTable) -> Vec<CompilerError> {
                 },
                 None => break,
             }
+        }
+    }
+
+    errors
+}
+
+/// Resolves the effective constructor parameters for each class.
+///
+/// Rules:
+/// - If a class has explicit params, those are its constructor params.
+/// - If a class has no params and no explicit parent args, it inherits
+///   the parent constructor signature by default.
+/// - If a class defines params and has a parent but omits parent args,
+///   the params must match the parent signature exactly.
+fn resolve_constructor_signatures(
+    program: &ast::Program,
+    symbols: &mut SymbolTable,
+) -> Vec<CompilerError> {
+    let mut errors = Vec::new();
+    let class_decls: HashMap<String, &ast::ClassDecl> =
+        program.classes.iter().map(|c| (c.name.clone(), c)).collect();
+
+    let mut memo: HashMap<String, Vec<(String, HulkType)>> = HashMap::new();
+    let mut resolving: HashSet<String> = HashSet::new();
+
+    fn resolve_one(
+        class_name: &str,
+        class_decls: &HashMap<String, &ast::ClassDecl>,
+        symbols: &SymbolTable,
+        memo: &mut HashMap<String, Vec<(String, HulkType)>>,
+        resolving: &mut HashSet<String>,
+        errors: &mut Vec<CompilerError>,
+    ) -> Vec<(String, HulkType)> {
+        if let Some(found) = memo.get(class_name) {
+            return found.clone();
+        }
+
+        if !resolving.insert(class_name.to_string()) {
+            return vec![];
+        }
+
+        let info = match symbols.get_class(class_name).cloned() {
+            Some(i) => i,
+            None => {
+                resolving.remove(class_name);
+                return vec![];
+            }
+        };
+
+        // Builtins (or classes without AST declaration) keep current params.
+        let class_decl = match class_decls.get(class_name) {
+            Some(c) => *c,
+            None => {
+                let out = info.params.clone();
+                memo.insert(class_name.to_string(), out.clone());
+                resolving.remove(class_name);
+                return out;
+            }
+        };
+
+        let mut effective = info.params.clone();
+
+        if class_decl.params.is_empty() && class_decl.parent_args.is_empty() {
+            if let Some(parent_name) = &info.parent {
+                if parent_name != "Object" {
+                    effective = resolve_one(
+                        parent_name,
+                        class_decls,
+                        symbols,
+                        memo,
+                        resolving,
+                        errors,
+                    );
+                }
+            }
+        } else if let Some(parent_name) = &info.parent {
+            if parent_name != "Object" && class_decl.parent_args.is_empty() {
+                let parent_params = resolve_one(
+                    parent_name,
+                    class_decls,
+                    symbols,
+                    memo,
+                    resolving,
+                    errors,
+                );
+
+                let same_len = parent_params.len() == info.params.len();
+                let same_signature = same_len
+                    && parent_params
+                        .iter()
+                        .zip(info.params.iter())
+                        .all(|((pn, pt), (cn, ct))| pn == cn && pt == ct);
+
+                if !same_signature {
+                    errors.push(CompilerError::invalid_override_signature(
+                        &class_decl.name,
+                        "<constructor>",
+                        class_decl.span,
+                    ));
+                }
+            }
+        }
+
+        memo.insert(class_name.to_string(), effective.clone());
+        resolving.remove(class_name);
+        effective
+    }
+
+    let mut updates: Vec<(String, Vec<(String, HulkType)>)> = Vec::new();
+    for class in &program.classes {
+        let effective = resolve_one(
+            &class.name,
+            &class_decls,
+            symbols,
+            &mut memo,
+            &mut resolving,
+            &mut errors,
+        );
+        updates.push((class.name.clone(), effective));
+    }
+
+    for (name, params) in updates {
+        if let Some(info) = symbols.classes.get_mut(&name) {
+            info.params = params;
         }
     }
 
