@@ -276,10 +276,15 @@ impl<'a> SemanticChecker<'a> {
     }
 
     fn check_let(&mut self, let_expr: &ast::LetExpr) {
-        // Each `let` declaration goes into a new scope.
-        self.symbols.push_scope();
+        // Comma-separated declarations behave like nested lets:
+        // let a = 1, b = a in body  == let a = 1 in let b = a in body
+        let mut pushed_scopes = 0usize;
 
         for decl in &let_expr.decls {
+            // New scope per declaration so shadowing is allowed.
+            self.symbols.push_scope();
+            pushed_scopes += 1;
+
             // Check type annotation.
             if let Some(ref ann) = decl.type_ann {
                 self.check_type_exists(ann, decl.span);
@@ -291,20 +296,18 @@ impl<'a> SemanticChecker<'a> {
                 Some(ann) => HulkType::from_name(ann),
                 None => HulkType::Unknown,
             };
-            if !self.symbols.define_var(&decl.name, t, decl.span) {
-                self.errors.push(CompilerError::duplicate_definition(
-                    "Variable",
-                    &decl.name,
-                    decl.span,
-                ));
-            }
+            // Since each declaration has its own scope, redefining the same
+            // name in a later declaration is valid and shadows the previous one.
+            self.symbols.define_var(&decl.name, t, decl.span);
         }
 
         // Check body (can use all declared variables).
         self.check_expr_body(&let_expr.body);
 
-        let vars = self.symbols.pop_scope();
-        self.warn_unused(&vars);
+        for _ in 0..pushed_scopes {
+            let vars = self.symbols.pop_scope();
+            self.warn_unused(&vars);
+        }
     }
 
     fn check_if(&mut self, if_expr: &ast::IfExpr) {
@@ -368,7 +371,10 @@ impl<'a> SemanticChecker<'a> {
         match &assign.target {
             ast::Expression::Atom(atom) => match atom.as_ref() {
                 ast::atoms::atom::Atom::Variable(id) => {
-                    if self.symbols.lookup_var(&id.name).is_none() {
+                    if id.name == "PI" || id.name == "E" {
+                        self.errors
+                            .push(CompilerError::cannot_assign_constant(&id.name, id.position));
+                    } else if self.symbols.lookup_var(&id.name).is_none() {
                         self.errors
                             .push(CompilerError::undefined_variable(&id.name, id.position));
                     } else {

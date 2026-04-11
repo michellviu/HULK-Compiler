@@ -78,6 +78,13 @@ impl<'ctx> CodegenContext<'ctx> {
                 }
             }
             ast::atoms::atom::Atom::Variable(id) => {
+                if id.name == "PI" {
+                    return Some(self.f64_type().const_float(3.14).into());
+                }
+                if id.name == "E" {
+                    return Some(self.f64_type().const_float(2.71828).into());
+                }
+
                 if let Some((ptr, llvm_ty)) = self.get_variable(&id.name) {
                     let val = self.builder.build_load(llvm_ty, ptr, &id.name).unwrap();
                     Some(val)

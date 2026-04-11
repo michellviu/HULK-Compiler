@@ -175,6 +175,16 @@ impl CompilerError {
         }
     }
 
+    pub fn cannot_assign_constant(name: &str, span: Span) -> Self {
+        CompilerError {
+            code: "E114",
+            message: format!("No se puede asignar a la constante '{}'", name),
+            span,
+            severity: Severity::Error,
+            hint: Some("Use una variable local si necesita un valor modificable.".into()),
+        }
+    }
+
     // ── Type errors (E2xx) ──────────────────────────────────────
 
     pub fn type_mismatch(expected: &str, got: &str, span: Span) -> Self {

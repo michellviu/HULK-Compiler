@@ -415,9 +415,13 @@ impl<'a> TypeChecker<'a> {
     }
 
     fn infer_let(&mut self, let_expr: &ast::LetExpr) -> HulkType {
-        self.symbols.push_scope();
+        let mut pushed_scopes = 0usize;
 
         for decl in &let_expr.decls {
+            // Match nested-let semantics for comma-separated declarations.
+            self.symbols.push_scope();
+            pushed_scopes += 1;
+
             let init_type = self.infer_expression(&decl.value);
 
             let declared_type = match &decl.type_ann {
@@ -441,7 +445,9 @@ impl<'a> TypeChecker<'a> {
         }
 
         let result = self.infer_expr_body(&let_expr.body);
-        self.symbols.pop_scope();
+        for _ in 0..pushed_scopes {
+            self.symbols.pop_scope();
+        }
         result
     }
 

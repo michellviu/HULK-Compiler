@@ -152,6 +152,10 @@ impl SymbolTable {
                 span: builtin_span,
             });
         }
+
+        // Built-in numeric constants.
+        let _ = self.define_var("PI", HulkType::Number, builtin_span);
+        let _ = self.define_var("E", HulkType::Number, builtin_span);
     }
 
     // ── Scope management ────────────────────────────────────────
