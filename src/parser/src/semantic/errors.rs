@@ -129,6 +129,52 @@ impl CompilerError {
         }
     }
 
+    pub fn invalid_inheritance(parent: &str, span: Span) -> Self {
+        CompilerError {
+            code: "E110",
+            message: format!("No se puede heredar del tipo builtin '{}'", parent),
+            span,
+            severity: Severity::Error,
+            hint: Some("Solo tipos de usuario y Object pueden ser padres de un tipo.".into()),
+        }
+    }
+
+    pub fn invalid_override_signature(class_name: &str, method: &str, span: Span) -> Self {
+        CompilerError {
+            code: "E111",
+            message: format!(
+                "La redefinición de '{}.{}' debe usar exactamente la misma firma que su ancestro",
+                class_name, method
+            ),
+            span,
+            severity: Severity::Error,
+            hint: Some("Revise tipos y cantidad de parámetros, y tipo de retorno.".into()),
+        }
+    }
+
+    pub fn base_outside_method(span: Span) -> Self {
+        CompilerError {
+            code: "E112",
+            message: "'base' solo puede invocarse dentro de un método".into(),
+            span,
+            severity: Severity::Error,
+            hint: None,
+        }
+    }
+
+    pub fn undefined_base_method(class_name: &str, method: &str, span: Span) -> Self {
+        CompilerError {
+            code: "E113",
+            message: format!(
+                "No existe implementación base para '{}.{}' en la jerarquía de ancestros",
+                class_name, method
+            ),
+            span,
+            severity: Severity::Error,
+            hint: None,
+        }
+    }
+
     // ── Type errors (E2xx) ──────────────────────────────────────
 
     pub fn type_mismatch(expected: &str, got: &str, span: Span) -> Self {
