@@ -370,4 +370,31 @@ impl SymbolTable {
             }
         }
     }
+
+    /// Looks up the closest ancestor implementation of a method,
+    /// excluding the method declared in `class_name` itself.
+    pub fn resolve_parent_method(&self, class_name: &str, method_name: &str) -> Option<(String, FuncInfo)> {
+        let mut current = self
+            .classes
+            .get(class_name)
+            .and_then(|c| c.parent.clone())?;
+        let mut visited = std::collections::HashSet::new();
+
+        loop {
+            if !visited.insert(current.clone()) {
+                return None;
+            }
+            if let Some(class) = self.classes.get(&current) {
+                if let Some(method) = class.get_method(method_name) {
+                    return Some((current, method.clone()));
+                }
+                match &class.parent {
+                    Some(p) => current = p.clone(),
+                    None => return None,
+                }
+            } else {
+                return None;
+            }
+        }
+    }
 }
