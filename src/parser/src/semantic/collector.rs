@@ -226,6 +226,7 @@ impl<'a> Visitor for CollectorVisitor<'a> {
     fn visit_let_expr(&mut self, _let_expr: &ast::LetExpr) {}
     fn visit_if_expr(&mut self, _if_expr: &ast::IfExpr) {}
     fn visit_while_expr(&mut self, _while_expr: &ast::WhileExpr) {}
+    fn visit_for_expr(&mut self, _for_expr: &ast::ForExpr) {}
     fn visit_case_expr(&mut self, _case_expr: &ast::CaseExpr) {}
     fn visit_assign_expr(&mut self, _assign: &ast::AssignExpr) {}
     fn visit_member_access(&mut self, _access: &ast::MemberAccess) {}
@@ -254,7 +255,10 @@ fn check_inheritance_cycles(symbols: &SymbolTable) -> Vec<CompilerError> {
 
     for (name, class) in &symbols.classes {
         // Skip built-in types.
-        if class.span.start == 0 && class.span.end == 0 && matches!(name.as_str(), "Object" | "Number" | "String" | "Boolean") {
+        if class.span.start == 0
+            && class.span.end == 0
+            && matches!(name.as_str(), "Object" | "Number" | "String" | "Boolean" | "Range")
+        {
             continue;
         }
 

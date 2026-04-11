@@ -209,6 +209,7 @@ impl<'a> TypeChecker<'a> {
             ast::Expression::Let(let_expr) => self.infer_let(let_expr),
             ast::Expression::If(if_expr) => self.infer_if(if_expr),
             ast::Expression::While(while_expr) => self.infer_while(while_expr),
+            ast::Expression::For(for_expr) => self.infer_for(for_expr),
             ast::Expression::Case(case_expr) => self.infer_case(case_expr),
             ast::Expression::Assign(assign) => self.infer_assign(assign),
             ast::Expression::FunctionCall(call) => self.infer_function_call(call),
@@ -428,6 +429,33 @@ impl<'a> TypeChecker<'a> {
         let body_type = self.infer_expr_body(&while_expr.body);
         body_type
 
+    }
+
+    fn infer_for(&mut self, for_expr: &ast::ForExpr) -> HulkType {
+        let iterable_type = self.infer_expression(&for_expr.iterable);
+
+        // Current milestone: only `range(start, end)` is supported as iterable.
+        let element_type = match iterable_type {
+            HulkType::Class(ref name) if name == "Range" => HulkType::Number,
+            HulkType::Error => HulkType::Error,
+            HulkType::Unknown => HulkType::Unknown,
+            other => {
+                self.errors.push(CompilerError::type_mismatch(
+                    "Range",
+                    &other.type_name(),
+                    for_expr.span,
+                ));
+                HulkType::Unknown
+            }
+        };
+
+        self.symbols.push_scope();
+        self.symbols
+            .define_var(&for_expr.var, element_type, for_expr.span);
+        let body_type = self.infer_expr_body(&for_expr.body);
+        self.symbols.pop_scope();
+
+        body_type
     }
 
     fn infer_case(&mut self, case_expr: &ast::CaseExpr) -> HulkType {

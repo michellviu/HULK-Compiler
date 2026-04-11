@@ -117,7 +117,7 @@ impl SymbolTable {
         let builtin_span = Span::new(0, 0);
 
         // Built-in types
-        for name in &["Object", "Number", "String", "Boolean"] {
+        for name in &["Object", "Number", "String", "Boolean", "Range"] {
             self.classes.insert(name.to_string(), ClassInfo {
                 name: name.to_string(),
                 params: vec![],
@@ -137,6 +137,11 @@ impl SymbolTable {
             ("exp", vec![("x", HulkType::Number)], HulkType::Number),
             ("log", vec![("base", HulkType::Number), ("x", HulkType::Number)], HulkType::Number),
             ("rand", vec![], HulkType::Number),
+            (
+                "range",
+                vec![("start", HulkType::Number), ("end", HulkType::Number)],
+                HulkType::Class("Range".to_string()),
+            ),
         ];
 
         for (name, params, ret) in builtin_fns {
