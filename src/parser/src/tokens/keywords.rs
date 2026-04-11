@@ -17,6 +17,7 @@ pub enum Keyword {
     Of(Position),
     New(Position),
     Is(Position),
+    Inherits(Position),
 }
 
 impl Display for Keyword {
@@ -36,6 +37,7 @@ impl Display for Keyword {
             Keyword::Of(_) => "of",
             Keyword::New(_) => "new",
             Keyword::Is(_) => "is",
+            Keyword::Inherits(_) => "inherits",
         };
         write!(f, "{}", s)
     }
