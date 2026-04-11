@@ -22,22 +22,34 @@ impl<'ctx> CodegenContext<'ctx> {
 
     /// Forward-declares a HULK function in the LLVM module.
     fn declare_function(&mut self, func: &ast::FunctionDecl) {
-        let param_types: Vec<BasicMetadataTypeEnum<'ctx>> = func
-            .params
-            .iter()
-            .map(|p| {
-                let ht = match &p.type_ann {
-                    Some(ann) => HulkType::from_name(ann),
-                    None => HulkType::Number, // default assumption
-                };
-                self.hulk_type_to_meta(&ht)
-            })
-            .collect();
+        let func_info = self.symbols.get_function(&func.name).cloned();
 
-        let ret_type = match &func.return_type {
-            Some(ann) => HulkType::from_name(ann),
-            None => HulkType::Void,
+        let param_types: Vec<BasicMetadataTypeEnum<'ctx>> = if let Some(info) = &func_info {
+            info.params
+                .iter()
+                .map(|(_, ht)| self.hulk_type_to_meta(ht))
+                .collect()
+        } else {
+            func
+                .params
+                .iter()
+                .map(|p| {
+                    let ht = match &p.type_ann {
+                        Some(ann) => HulkType::from_name(ann),
+                        None => HulkType::Number,
+                    };
+                    self.hulk_type_to_meta(&ht)
+                })
+                .collect()
         };
+
+        let ret_type = func_info
+            .as_ref()
+            .map(|i| i.return_type.clone())
+            .unwrap_or_else(|| match &func.return_type {
+                Some(ann) => HulkType::from_name(ann),
+                None => HulkType::Void,
+            });
 
         let fn_type = if Self::is_void_type(&ret_type) {
             self.void_type().fn_type(&param_types, false)
@@ -53,6 +65,7 @@ impl<'ctx> CodegenContext<'ctx> {
     /// Generates the body of a HULK function.
     fn gen_function_body(&mut self, func: &ast::FunctionDecl) {
         let llvm_func = *self.functions.get(&func.name).unwrap();
+        let func_info = self.symbols.get_function(&func.name).cloned();
         let entry_bb = self.context.append_basic_block(llvm_func, "entry");
         self.builder.position_at_end(entry_bb);
 
@@ -60,10 +73,13 @@ impl<'ctx> CodegenContext<'ctx> {
 
         // Bind parameters to allocas.
         for (i, param) in func.params.iter().enumerate() {
-            let ht = match &param.type_ann {
-                Some(ann) => HulkType::from_name(ann),
-                None => HulkType::Number,
-            };
+            let ht = func_info
+                .as_ref()
+                .and_then(|info| info.params.get(i).map(|(_, t)| t.clone()))
+                .unwrap_or_else(|| match &param.type_ann {
+                    Some(ann) => HulkType::from_name(ann),
+                    None => HulkType::Number,
+                });
             let llvm_ty = self.hulk_type_to_llvm(&ht);
             let alloca = self.create_entry_block_alloca(llvm_func, &param.name, llvm_ty);
             self.builder
@@ -76,10 +92,13 @@ impl<'ctx> CodegenContext<'ctx> {
         let body_val = self.gen_body(&func.body);
 
         // Build return.
-        let ret_type = match &func.return_type {
-            Some(ann) => HulkType::from_name(ann),
-            None => HulkType::Void,
-        };
+        let ret_type = func_info
+            .as_ref()
+            .map(|i| i.return_type.clone())
+            .unwrap_or_else(|| match &func.return_type {
+                Some(ann) => HulkType::from_name(ann),
+                None => HulkType::Void,
+            });
 
         // Only build return if current block has no terminator yet.
         let current_bb = self.builder.get_insert_block().unwrap();

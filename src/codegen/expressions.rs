@@ -4,6 +4,7 @@
 //! expressions that produce a value, `None` for void expressions.
 
 use inkwell::values::{BasicMetadataValueEnum, BasicValue, BasicValueEnum};
+use inkwell::types::{BasicMetadataTypeEnum, BasicType};
 use inkwell::FloatPredicate;
 use inkwell::IntPredicate;
 
@@ -671,6 +672,9 @@ impl<'ctx> CodegenContext<'ctx> {
         if call.name == "print" {
             return self.gen_print_call(call);
         }
+        if call.name == "base" {
+            return self.gen_base_call(call);
+        }
 
         let llvm_func = match self.functions.get(&call.name) {
             Some(f) => *f,
@@ -734,6 +738,54 @@ impl<'ctx> CodegenContext<'ctx> {
         None // print returns Void
     }
 
+    fn gen_base_call(&mut self, call: &ast::FunctionCall) -> HulkValue<'ctx> {
+        let class_name = self.current_class.clone()?;
+        let method_name = self.current_method.clone()?;
+
+        let (owner_class, method_info) =
+            self.symbols.resolve_parent_method(&class_name, &method_name)?;
+
+        let method_llvm_name = format!("__{}__{}", owner_class, method_name);
+        let llvm_func = *self.functions.get(&method_llvm_name)?;
+
+        let (self_alloca, self_ty) = self.get_variable("self")?;
+        let self_ptr = self
+            .builder
+            .build_load(self_ty, self_alloca, "self_value")
+            .ok()?
+            .into_pointer_value();
+
+        let mut args: Vec<BasicMetadataValueEnum<'ctx>> = vec![self_ptr.into()];
+        for arg in &call.args {
+            if let Some(v) = self.gen_expression(arg) {
+                args.push(v.into());
+            }
+        }
+
+        let mut param_types: Vec<BasicMetadataTypeEnum<'ctx>> = vec![self.ptr_type().into()];
+        for (_, ty) in &method_info.params {
+            param_types.push(self.hulk_type_to_meta(ty));
+        }
+
+        let fn_type = if Self::is_void_type(&method_info.return_type) {
+            self.void_type().fn_type(&param_types, false)
+        } else {
+            self.hulk_type_to_llvm(&method_info.return_type)
+                .fn_type(&param_types, false)
+        };
+
+        self.builder
+            .build_indirect_call(
+                fn_type,
+                llvm_func.as_global_value().as_pointer_value(),
+                &args,
+                "base_call",
+            )
+            .ok()?
+            .try_as_basic_value()
+            .left()
+    }
+
     // ── Member access ────────────────────────────────────────────
 
     fn gen_member_access(&mut self, access: &ast::MemberAccess) -> HulkValue<'ctx> {
@@ -779,27 +831,66 @@ impl<'ctx> CodegenContext<'ctx> {
         let class_name = self.infer_class_name(&call.object);
 
         if let Some(ref cname) = class_name {
-            // Resolve method to a specific class (for static dispatch).
-            if let Some((owner_class, _method_info)) =
-                self.symbols.resolve_method(cname, &call.method)
+            if let Some((_owner_class, method_info)) = self.symbols.resolve_method(cname, &call.method)
             {
-                let method_llvm_name = format!("__{}__{}", owner_class, call.method);
-                if let Some(&llvm_func) = self.functions.get(&method_llvm_name) {
-                    let mut args: Vec<BasicMetadataValueEnum<'ctx>> =
-                        vec![obj_ptr.into()];
-                    for arg in &call.args {
-                        if let Some(v) = self.gen_expression(arg) {
-                            args.push(v.into());
-                        }
+                let slot_idx = match self
+                    .vtable_indices
+                    .get(&(cname.clone(), call.method.clone()))
+                    .copied()
+                {
+                    Some(i) => i,
+                    None => return None,
+                };
+
+                let struct_ty = self.class_structs.get(cname)?.clone();
+                let vtable_field_ptr = self
+                    .builder
+                    .build_struct_gep(struct_ty, obj_ptr, 0, "vtable")
+                    .ok()?;
+                let vtable_ptr = self
+                    .builder
+                    .build_load(self.ptr_type(), vtable_field_ptr, "vtable_load")
+                    .ok()?
+                    .into_pointer_value();
+
+                let idx = self.context.i32_type().const_int(slot_idx as u64, false);
+                let method_slot_ptr = unsafe {
+                    self.builder
+                        .build_in_bounds_gep(self.ptr_type(), vtable_ptr, &[idx], "method_slot")
+                        .ok()?
+                };
+                let method_ptr = self
+                    .builder
+                    .build_load(self.ptr_type(), method_slot_ptr, "method_ptr")
+                    .ok()?
+                    .into_pointer_value();
+
+                let mut args: Vec<BasicMetadataValueEnum<'ctx>> = vec![obj_ptr.into()];
+                for arg in &call.args {
+                    if let Some(v) = self.gen_expression(arg) {
+                        args.push(v.into());
                     }
-
-                    let result = self
-                        .builder
-                        .build_call(llvm_func, &args, &call.method)
-                        .unwrap();
-
-                    return result.try_as_basic_value().left();
                 }
+
+                let mut param_types: Vec<BasicMetadataTypeEnum<'ctx>> =
+                    vec![self.ptr_type().into()];
+                for (_, ty) in &method_info.params {
+                    param_types.push(self.hulk_type_to_meta(ty));
+                }
+
+                let fn_type = if Self::is_void_type(&method_info.return_type) {
+                    self.void_type().fn_type(&param_types, false)
+                } else {
+                    self.hulk_type_to_llvm(&method_info.return_type)
+                        .fn_type(&param_types, false)
+                };
+
+                let result = self
+                    .builder
+                    .build_indirect_call(fn_type, method_ptr, &args, &call.method)
+                    .ok()?;
+
+                return result.try_as_basic_value().left();
             }
         }
 
