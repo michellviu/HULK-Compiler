@@ -5,6 +5,7 @@
 
 use inkwell::values::{BasicMetadataValueEnum, BasicValue, BasicValueEnum};
 use inkwell::FloatPredicate;
+use inkwell::IntPredicate;
 
 use parser::ast;
 use parser::tokens;
@@ -23,6 +24,7 @@ impl<'ctx> CodegenContext<'ctx> {
             ast::Expression::Let(let_expr) => self.gen_let(let_expr),
             ast::Expression::If(if_expr) => self.gen_if(if_expr),
             ast::Expression::While(while_expr) => self.gen_while(while_expr),
+            ast::Expression::For(for_expr) => self.gen_for(for_expr),
             ast::Expression::Case(_case_expr) => {
                 // Case/pattern matching — simplified: evaluate first branch.
                 // Full implementation would need runtime type tags.
@@ -535,6 +537,83 @@ impl<'ctx> CodegenContext<'ctx> {
         // Body.
         self.builder.position_at_end(body_bb);
         self.gen_expr_body(&while_expr.body);
+        if self.builder.get_insert_block().unwrap().get_terminator().is_none() {
+            self.builder.build_unconditional_branch(cond_bb).unwrap();
+        }
+
+        self.builder.position_at_end(merge_bb);
+        None
+    }
+
+    // ── For expression ───────────────────────────────────────────
+
+    fn gen_for(&mut self, for_expr: &ast::ForExpr) -> HulkValue<'ctx> {
+        let func = self.current_function();
+
+        let iterable = self.gen_expression(&for_expr.iterable)?;
+        let iterable_ptr = iterable.into_pointer_value();
+
+        let cond_bb = self.context.append_basic_block(func, "for.cond");
+        let body_bb = self.context.append_basic_block(func, "for.body");
+        let merge_bb = self.context.append_basic_block(func, "for.merge");
+
+        self.builder.build_unconditional_branch(cond_bb).unwrap();
+
+        // Condition: for now iterables are only ranges.
+        self.builder.position_at_end(cond_bb);
+        let next_fn = *self.functions.get("__hulk_range_next").unwrap();
+        let next_raw = self
+            .builder
+            .build_call(next_fn, &[iterable_ptr.into()], "for_next")
+            .unwrap()
+            .try_as_basic_value()
+            .left()
+            .unwrap();
+
+        let next_i32 = next_raw.into_int_value();
+        let cond_val = self
+            .builder
+            .build_int_compare(
+                IntPredicate::NE,
+                next_i32,
+                self.context.i32_type().const_zero(),
+                "for_has_next",
+            )
+            .unwrap();
+
+        self.builder
+            .build_conditional_branch(cond_val, body_bb, merge_bb)
+            .unwrap();
+
+        // Body: bind loop variable to current() in a loop-local scope.
+        self.builder.position_at_end(body_bb);
+        let current_fn = *self.functions.get("__hulk_range_current").unwrap();
+        let current_val = self
+            .builder
+            .build_call(current_fn, &[iterable_ptr.into()], "for_current")
+            .unwrap()
+            .try_as_basic_value()
+            .left()
+            .unwrap();
+
+        self.push_scope();
+        self.symbols.push_scope();
+
+        let llvm_ty = self.hulk_type_to_llvm(&HulkType::Number);
+        let var_alloca = self.create_entry_block_alloca(func, &for_expr.var, llvm_ty);
+        self.builder.build_store(var_alloca, current_val).unwrap();
+        self.set_variable(&for_expr.var, var_alloca, llvm_ty);
+        self.symbols.define_var(
+            &for_expr.var,
+            HulkType::Number,
+            parser::tokens::Position::new(0, 0),
+        );
+
+        self.gen_expr_body(&for_expr.body);
+
+        self.symbols.pop_scope();
+        self.pop_scope();
+
         if self.builder.get_insert_block().unwrap().get_terminator().is_none() {
             self.builder.build_unconditional_branch(cond_bb).unwrap();
         }

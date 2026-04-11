@@ -54,6 +54,24 @@ impl<'ctx> CodegenContext<'ctx> {
         let f = self.module.add_function("hulk_rand", nullary_f64, None);
         self.functions.insert("rand".into(), f);
 
+        // ── range iterable ─────────────────────────────────────
+        // void* hulk_range(double start, double end)
+        let range_ty = ptr_ty.fn_type(&[f64_meta, f64_meta], false);
+        let f = self.module.add_function("hulk_range", range_ty, None);
+        self.functions.insert("range".into(), f);
+
+        // int hulk_range_next(void* it)
+        let range_next_ty = i32_ty.fn_type(&[ptr_meta], false);
+        let f = self.module.add_function("hulk_range_next", range_next_ty, None);
+        self.functions.insert("__hulk_range_next".into(), f);
+
+        // double hulk_range_current(void* it)
+        let range_current_ty = f64_ty.fn_type(&[ptr_meta], false);
+        let f = self
+            .module
+            .add_function("hulk_range_current", range_current_ty, None);
+        self.functions.insert("__hulk_range_current".into(), f);
+
         // ── string helper ────────────────────────────────────────
         // char* hulk_concat(const char*, const char*)
         let concat_ty = ptr_ty.fn_type(&[ptr_meta, ptr_meta], false);
