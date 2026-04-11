@@ -11,7 +11,7 @@ grammar;
 match {
     // Keywords (higher priority than ID regex)
     "let", "in", "if", "elif", "else", "while", "for",
-    "case", "of", "new", "type", "is", "inherits", "function",
+    "case", "of", "new", "type", "is", "as", "inherits", "function",
     "true", "false",
 
     // Multi-char operators (must appear before single-char ones)
@@ -286,8 +286,8 @@ EqualityOp: tokens::BinOp = {
 // ── Level 4: Comparison (< <= > >=) left-assoc ─────────────────
 
 ComparisonExpr: ast::Expression = {
-    <s:@L> <l:ComparisonExpr> <op:ComparisonOp> <r:ConcatExpr> <e:@R> => ast::Expression::new_binary_op(l, r, op, tokens::Position::new(s, e)),
-    ConcatExpr,
+    <s:@L> <l:ComparisonExpr> <op:ComparisonOp> <r:TypeTestExpr> <e:@R> => ast::Expression::new_binary_op(l, r, op, tokens::Position::new(s, e)),
+    TypeTestExpr,
 };
 
 ComparisonOp: tokens::BinOp = {
@@ -295,6 +295,30 @@ ComparisonOp: tokens::BinOp = {
     <s:@L> "<=" <e:@R> => tokens::BinOp::LessEqual(tokens::Position::new(s, e)),
     <s:@L> ">" <e:@R>  => tokens::BinOp::Greater(tokens::Position::new(s, e)),
     <s:@L> ">=" <e:@R> => tokens::BinOp::GreaterEqual(tokens::Position::new(s, e)),
+};
+
+// ── Type test / cast (is, as) ──────────────────────────────────
+
+TypeTestExpr: ast::Expression = {
+    <s:@L> <expr:CastExpr> "is" <type_name:Id> <e:@R> => {
+        ast::Expression::IsType(Box::new(ast::IsExpr {
+            expr,
+            type_name,
+            span: tokens::Position::new(s, e),
+        }))
+    },
+    CastExpr,
+};
+
+CastExpr: ast::Expression = {
+    <s:@L> <expr:CastExpr> "as" <type_name:Id> <e:@R> => {
+        ast::Expression::AsType(Box::new(ast::AsExpr {
+            expr,
+            type_name,
+            span: tokens::Position::new(s, e),
+        }))
+    },
+    ConcatExpr,
 };
 
 // ── Level 5: Concat (@ @@) left-assoc ──────────────────────────
