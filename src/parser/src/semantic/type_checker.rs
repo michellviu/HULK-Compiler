@@ -26,6 +26,7 @@ pub fn check_types(
         symbols,
         errors: Vec::new(),
         in_method: false,
+        current_method: None,
     };
 
     // Type-check function bodies.
@@ -56,6 +57,7 @@ struct TypeChecker<'a> {
     symbols: &'a mut SymbolTable,
     errors: Vec<CompilerError>,
     in_method: bool,
+    current_method: Option<String>,
 }
 
 impl<'a> TypeChecker<'a> {
@@ -73,6 +75,12 @@ impl<'a> TypeChecker<'a> {
         }
 
         let body_type = self.infer_body(&func.body);
+
+        if func.return_type.is_none() {
+            if let Some(info) = self.symbols.functions.get_mut(&func.name) {
+                info.return_type = body_type.clone();
+            }
+        }
 
         // Check return type if annotated.
         if let Some(ref ret_ann) = func.return_type {
@@ -95,17 +103,50 @@ impl<'a> TypeChecker<'a> {
     fn check_class(&mut self, class: &ast::ClassDecl) {
         self.symbols.current_class = Some(class.name.clone());
 
+        if let Some(parent_name) = &class.parent {
+            if !class.parent_args.is_empty() {
+                let parent_info = self.symbols.get_class(parent_name).cloned();
+                self.symbols.push_scope();
+                self.define_effective_constructor_params(&class.name, class.span);
+                let arg_types: Vec<HulkType> = class
+                    .parent_args
+                    .iter()
+                    .map(|arg| self.infer_expression(arg))
+                    .collect();
+
+                if let Some(parent) = parent_info {
+                    if parent.params.len() != arg_types.len() {
+                        self.errors.push(CompilerError::wrong_arity(
+                            parent_name,
+                            parent.params.len(),
+                            arg_types.len(),
+                            class.span,
+                        ));
+                    }
+
+                    for (i, ((_pname, ptype), atype)) in
+                        parent.params.iter().zip(arg_types.iter()).enumerate()
+                    {
+                        if ptype.is_resolved() && atype.is_resolved() {
+                            if !self.symbols.conforms_to(atype, ptype) {
+                                self.errors.push(CompilerError::type_does_not_conform(
+                                    &atype.type_name(),
+                                    &ptype.type_name(),
+                                    class.parent_args.get(i).map(|a| a.span()).unwrap_or(class.span),
+                                ));
+                            }
+                        }
+                    }
+                }
+                self.symbols.pop_scope();
+            }
+        }
+
         // Type-check attribute initializers.
         for attr in &class.attributes {
             self.symbols.push_scope();
-            // Constructor params available in attribute initializers.
-            for p in &class.params {
-                let t = match &p.type_ann {
-                    Some(a) => HulkType::from_name(a),
-                    None => HulkType::Unknown,
-                };
-                self.symbols.define_var(&p.name, t, p.span);
-            }
+            // Effective constructor params available in attribute initializers.
+            self.define_effective_constructor_params(&class.name, attr.span);
             self.in_method = true;
             let init_type = self.infer_expression(&attr.init);
             self.in_method = false;
@@ -135,6 +176,7 @@ impl<'a> TypeChecker<'a> {
 
     fn check_method(&mut self, method: &ast::Method) {
         self.in_method = true;
+        self.current_method = Some(method.name.clone());
         self.symbols.push_scope();
 
         let self_type = match &self.symbols.current_class {
@@ -153,6 +195,16 @@ impl<'a> TypeChecker<'a> {
 
         let body_type = self.infer_body(&method.body);
 
+        if method.return_type.is_none() {
+            if let Some(class_name) = self.symbols.current_class.clone() {
+                if let Some(class_info) = self.symbols.classes.get_mut(&class_name) {
+                    if let Some(method_info) = class_info.methods.get_mut(&method.name) {
+                        method_info.return_type = body_type.clone();
+                    }
+                }
+            }
+        }
+
         if let Some(ref ret_ann) = method.return_type {
             let expected = HulkType::from_name(ret_ann);
             if expected.is_resolved() && body_type.is_resolved() {
@@ -169,6 +221,7 @@ impl<'a> TypeChecker<'a> {
 
         self.symbols.pop_scope();
         self.in_method = false;
+        self.current_method = None;
     }
 
     // ── Body inference ──────────────────────────────────────────
@@ -497,6 +550,10 @@ impl<'a> TypeChecker<'a> {
     }
 
     fn infer_function_call(&mut self, call: &ast::FunctionCall) -> HulkType {
+        if call.name == "base" {
+            return self.infer_base_call(call);
+        }
+
         // Check arguments.
         let arg_types: Vec<HulkType> = call.args.iter().map(|a| self.infer_expression(a)).collect();
 
@@ -519,6 +576,59 @@ impl<'a> TypeChecker<'a> {
                 func_info.return_type.clone()
             }
             None => HulkType::Error, // already reported by semantic checker
+        }
+    }
+
+    fn infer_base_call(&mut self, call: &ast::FunctionCall) -> HulkType {
+        if !self.in_method {
+            for arg in &call.args {
+                self.infer_expression(arg);
+            }
+            return HulkType::Error;
+        }
+
+        let class_name = match self.symbols.current_class.clone() {
+            Some(name) => name,
+            None => return HulkType::Error,
+        };
+        let method_name = self.current_method.clone().unwrap_or_default();
+
+        let arg_types: Vec<HulkType> = call.args.iter().map(|a| self.infer_expression(a)).collect();
+
+        match self
+            .symbols
+            .resolve_parent_method(&class_name, &method_name)
+        {
+            Some((_owner, method_info)) => {
+                if method_info.params.len() != arg_types.len() {
+                    self.errors.push(CompilerError::wrong_arity(
+                        "base",
+                        method_info.params.len(),
+                        arg_types.len(),
+                        call.span,
+                    ));
+                    return method_info.return_type;
+                }
+
+                for (i, ((_, ptype), atype)) in
+                    method_info.params.iter().zip(arg_types.iter()).enumerate()
+                {
+                    if ptype.is_resolved() && atype.is_resolved() {
+                        if !self.symbols.conforms_to(atype, ptype) {
+                            self.errors.push(CompilerError::type_does_not_conform(
+                                &atype.type_name(),
+                                &ptype.type_name(),
+                                call.args.get(i).map(|a| a.span()).unwrap_or(call.span),
+                            ));
+                        }
+                    }
+                }
+
+                method_info.return_type
+            }
+            None => {
+                HulkType::Error
+            }
         }
     }
 
@@ -686,6 +796,14 @@ impl<'a> TypeChecker<'a> {
             HulkType::Object => Some("Object".into()),
             HulkType::SelfType => self.symbols.current_class.clone(),
             _ => None,
+        }
+    }
+
+    fn define_effective_constructor_params(&mut self, class_name: &str, span: crate::tokens::Span) {
+        if let Some(class_info) = self.symbols.get_class(class_name).cloned() {
+            for (name, ty) in class_info.params {
+                self.symbols.define_var(&name, ty, span);
+            }
         }
     }
 }
