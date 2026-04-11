@@ -20,6 +20,8 @@ pub trait Visitor {
     fn visit_if_expr(&mut self, if_expr: &ast::IfExpr);
     fn visit_while_expr(&mut self, while_expr: &ast::WhileExpr);
     fn visit_for_expr(&mut self, for_expr: &ast::ForExpr);
+    fn visit_is_expr(&mut self, is_expr: &ast::IsExpr);
+    fn visit_as_expr(&mut self, as_expr: &ast::AsExpr);
     fn visit_case_expr(&mut self, case_expr: &ast::CaseExpr);
     fn visit_assign_expr(&mut self, assign: &ast::AssignExpr);
     fn visit_member_access(&mut self, access: &ast::MemberAccess);

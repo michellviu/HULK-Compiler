@@ -149,6 +149,8 @@ impl Visitor for AstPrinterVisitor {
             Expression::If(if_expr) => if_expr.accept(self),
             Expression::While(while_expr) => while_expr.accept(self),
             Expression::For(for_expr) => for_expr.accept(self),
+            Expression::IsType(is_expr) => is_expr.accept(self),
+            Expression::AsType(as_expr) => as_expr.accept(self),
             Expression::Case(case_expr) => case_expr.accept(self),
             Expression::Assign(assign) => assign.accept(self),
             Expression::MemberAccess(access) => access.accept(self),
@@ -275,6 +277,20 @@ impl Visitor for AstPrinterVisitor {
         self.indent += 1;
         self.print_expr_body(&for_expr.body);
         self.indent -= 1;
+        self.indent -= 1;
+    }
+
+    fn visit_is_expr(&mut self, is_expr: &ast::IsExpr) {
+        println!("{}IsExpr: is {}", self.pad(), is_expr.type_name);
+        self.indent += 1;
+        is_expr.expr.accept(self);
+        self.indent -= 1;
+    }
+
+    fn visit_as_expr(&mut self, as_expr: &ast::AsExpr) {
+        println!("{}AsExpr: as {}", self.pad(), as_expr.type_name);
+        self.indent += 1;
+        as_expr.expr.accept(self);
         self.indent -= 1;
     }
 
