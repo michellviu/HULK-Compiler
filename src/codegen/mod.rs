@@ -43,9 +43,17 @@ pub fn compile(
     symbols: SymbolTable,
     output: &Path,
     runtime_path: &Path,
+    source_filename: &str,
+    source_text: &str,
 ) -> Result<PathBuf, String> {
     let context = Context::create();
-    let mut cg = CodegenContext::new(&context, "hulk_module", symbols);
+    let mut cg = CodegenContext::new(
+        &context,
+        "hulk_module",
+        symbols,
+        source_filename,
+        source_text,
+    );
 
     // ── 1. Declare built-in / runtime functions ──────────────────
     cg.declare_builtins();

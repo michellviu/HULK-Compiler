@@ -91,7 +91,14 @@ fn main() {
         "\x1b[1;34m→\x1b[0m Generando código LLVM…"
     );
 
-    match codegen::compile(&program, result.symbols, output_path, &runtime_path) {
+    match codegen::compile(
+        &program,
+        result.symbols,
+        output_path,
+        &runtime_path,
+        &script_path,
+        &source,
+    ) {
         Ok(exe_path) => {
             eprintln!(
                 "\x1b[1;32m✓\x1b[0m Compilación exitosa → \x1b[1m{}\x1b[0m",
