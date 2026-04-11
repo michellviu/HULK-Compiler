@@ -1,7 +1,7 @@
 use crate::ast::{Expression, Param, Attribute, Method, Visitable, Visitor};
 use crate::tokens::Span;
 
-/// `class Name[(params)] [is Parent[(args)]] { attrs methods }`
+/// `class Name[(params)] [inherits Parent[(args)]] { attrs methods }`
 #[derive(Debug, Clone)]
 pub struct ClassDecl {
     pub name: String,
