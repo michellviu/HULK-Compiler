@@ -14,6 +14,7 @@ use inkwell::values::{BasicValueEnum, FunctionValue, PointerValue};
 use inkwell::AddressSpace;
 
 use parser::semantic::SymbolTable;
+use parser::tokens::Span;
 
 /// Value produced by HULK expression codegen.
 ///
@@ -32,6 +33,8 @@ pub struct CodegenContext<'ctx> {
 
     // ── Semantic info ────────────────────────────────────────────
     pub symbols: SymbolTable,
+    pub source_filename: String,
+    pub source_text: String,
 
     // ── Variable scopes ──────────────────────────────────────────
     /// Stack of lexical scopes mapping variable names → (alloca pointer, LLVM type).
@@ -48,6 +51,8 @@ pub struct CodegenContext<'ctx> {
     pub vtables: HashMap<String, PointerValue<'ctx>>,
     /// Per-class ordered vtable entries: (method name, owner class).
     pub vtable_layouts: HashMap<String, Vec<(String, String)>>,
+    /// Stable runtime type IDs by class name.
+    pub class_type_ids: HashMap<String, u64>,
     /// Map from (class, method_name) → index in vtable.
     pub vtable_indices: HashMap<(String, String), usize>,
     /// Ordered list of attribute names per class (for GEP indexing).
@@ -64,7 +69,13 @@ pub struct CodegenContext<'ctx> {
 }
 
 impl<'ctx> CodegenContext<'ctx> {
-    pub fn new(context: &'ctx Context, module_name: &str, symbols: SymbolTable) -> Self {
+    pub fn new(
+        context: &'ctx Context,
+        module_name: &str,
+        symbols: SymbolTable,
+        source_filename: &str,
+        source_text: &str,
+    ) -> Self {
         let module = context.create_module(module_name);
         let builder = context.create_builder();
 
@@ -73,11 +84,14 @@ impl<'ctx> CodegenContext<'ctx> {
             module,
             builder,
             symbols,
+            source_filename: source_filename.to_string(),
+            source_text: source_text.to_string(),
             scopes: vec![HashMap::new()],
             functions: HashMap::new(),
             class_structs: HashMap::new(),
             vtables: HashMap::new(),
             vtable_layouts: HashMap::new(),
+            class_type_ids: HashMap::new(),
             vtable_indices: HashMap::new(),
             class_field_indices: HashMap::new(),
             string_constants: HashMap::new(),
@@ -178,6 +192,40 @@ impl<'ctx> CodegenContext<'ctx> {
             .unwrap()
             .get_parent()
             .unwrap()
+    }
+
+    fn offset_to_line_col(source: &str, offset: usize) -> (usize, usize) {
+        let mut line = 1;
+        let mut col = 1;
+        for (i, ch) in source.char_indices() {
+            if i >= offset {
+                break;
+            }
+            if ch == '\n' {
+                line += 1;
+                col = 1;
+            } else {
+                col += 1;
+            }
+        }
+        (line, col)
+    }
+
+    pub fn runtime_site_from_span(&self, span: Span) -> (u32, u32, String, u32, u32) {
+        let (line, col) = Self::offset_to_line_col(&self.source_text, span.start);
+        let source_line = self
+            .source_text
+            .lines()
+            .nth(line.saturating_sub(1))
+            .unwrap_or("")
+            .to_string();
+
+        let span_len = span.end.saturating_sub(span.start).max(1);
+        let line_len = source_line.chars().count();
+        let available = line_len.saturating_sub(col.saturating_sub(1)).max(1);
+        let marker_len = span_len.min(available).max(1);
+
+        (line as u32, col as u32, source_line, col as u32, marker_len as u32)
     }
 
     // ── Output ───────────────────────────────────────────────────
