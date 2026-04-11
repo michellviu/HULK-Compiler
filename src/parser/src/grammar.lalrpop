@@ -11,7 +11,7 @@ grammar;
 match {
     // Keywords (higher priority than ID regex)
     "let", "in", "if", "elif", "else", "while", "for",
-    "case", "of", "new", "type", "is", "function",
+    "case", "of", "new", "type", "is", "inherits", "function",
     "true", "false",
 
     // Multi-char operators (must appear before single-char ones)
@@ -52,10 +52,10 @@ EntryExpr: ast::ExprBody = {
 // ═══════════════════════════════════════════════════════════════════
 
 ClassDecl: ast::ClassDecl = {
-    <s:@L> "type" <name:Id> <params:("(" <Params> ")")?> <parent:("is" <Id> <("(" <Args> ")")?>)?> "{" <attributes:(<AttrDecl> ";")*> <methods:MethodDecl*> "}" <e:@R> => {
+    <s:@L> "type" <name:Id> <params:("(" <Params> ")")?> <parent:(<InheritsKw> <Id> <("(" <Args> ")")?>)?> "{" <attributes:(<AttrDecl> ";")*> <methods:MethodDecl*> "}" <e:@R> => {
         let params = params.unwrap_or_default();
         let (parent_name, parent_args) = match parent {
-            Some((p, args)) => (Some(p), args.unwrap_or_default()),
+            Some((_, p, args)) => (Some(p), args.unwrap_or_default()),
             None => (None, vec![]),
         };
         ast::ClassDecl {
@@ -68,6 +68,11 @@ ClassDecl: ast::ClassDecl = {
             span: tokens::Position::new(s, e),
         }
     },
+};
+
+InheritsKw: () = {
+    "inherits" => (),
+    "is" => (),
 };
 
 FunctionDecl: ast::FunctionDecl = {
