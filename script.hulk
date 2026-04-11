@@ -1,53 +1,41 @@
-type Point {
-    x = 0;
-    y = 0;
+type Point(x: Number, y: Number) {
+    x = x;
+    y = y;
 
-    getX() :Number => self.x;
-    getY() :Number => self.y;
+    getX() => self.x;
+    getY() => self.y;
 
     setX(x) => self.x := x;
     setY(y) => self.y := y;
 }
 
-type Perro(nombre: String, raza: String) {
-    nombre: String = nombre;
-    raza: String = raza;
+type PolarPoint(phi: Number, rho: Number) inherits Point(rho * sin(phi), rho * cos(phi)) {
 
-    ladrar() :Void => print("Woof!");
+    rho = rho;
+    phi = phi;
+    
+    printrho() => print("rho: " @ self.rho);
+    printphi() => print("phi: " @ self.phi);
 }
 
+type Person(firstname: String, lastname: String) {
+    firstname = firstname;
+    lastname = lastname;
 
-function factorial(n: Number): Number {
-    if (n <= 1) {
-        1;
-    }
-    else {
-        n * factorial(n - 1);
-    };
+    name() => self.firstname @@ self.lastname;
 }
 
-function hola(s: String) : Void {
-        print("Hola, " @ s @ "!");
+type Knight inherits Person {
+    name() => "Sir" @@ base();
 }
-
 
 
 {
-let x = 10 in {
-    print(factorial(x));
-};
-hola("Mundo");
 
-let perro = new Perro("Fido", "Labrador") in {
-    print(perro.nombre);
-    print(perro.raza);
-    perro.ladrar();
-};
+let pt = new PolarPoint(3,4) in
+    print("x: " @ pt.getX());
 
-let iterable = range(0, 5) in {
-    for (x in iterable) {
-        print(x);
-    };
-};
+let knight = new Knight("Lancelot", "Du Lac") in
+    print(knight.name());
 
 }
