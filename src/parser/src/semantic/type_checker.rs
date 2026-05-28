@@ -66,10 +66,19 @@ impl<'a> TypeChecker<'a> {
     fn check_function(&mut self, func: &ast::FunctionDecl) {
         self.symbols.push_scope();
 
+        // Use inferred types from the symbol table for unannotated params.
+        let func_info = self.symbols.get_function(&func.name).cloned();
         for p in &func.params {
             let t = match &p.type_ann {
                 Some(ann) => HulkType::from_name(ann),
-                None => HulkType::Unknown,
+                None => {
+                    // Look up the type inferred by the type inferer.
+                    func_info
+                        .as_ref()
+                        .and_then(|fi| fi.params.iter().find(|(n, _)| n == &p.name))
+                        .map(|(_, ty)| ty.clone())
+                        .unwrap_or(HulkType::Unknown)
+                }
             };
             self.symbols.define_var(&p.name, t, p.span);
         }
@@ -185,10 +194,20 @@ impl<'a> TypeChecker<'a> {
         };
         self.symbols.define_var("self", self_type, method.span);
 
+        // Use inferred types from the symbol table for unannotated params.
+        let method_info = self.symbols.current_class.clone().and_then(|cn| {
+            self.symbols.get_class(&cn).and_then(|ci| ci.get_method(&method.name)).cloned()
+        });
         for p in &method.params {
             let t = match &p.type_ann {
                 Some(ann) => HulkType::from_name(ann),
-                None => HulkType::Unknown,
+                None => {
+                    method_info
+                        .as_ref()
+                        .and_then(|mi| mi.params.iter().find(|(n, _)| n == &p.name))
+                        .map(|(_, ty)| ty.clone())
+                        .unwrap_or(HulkType::Unknown)
+                }
             };
             self.symbols.define_var(&p.name, t, p.span);
         }

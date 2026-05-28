@@ -740,13 +740,32 @@ impl<'ctx> CodegenContext<'ctx> {
 
         // Body.
         self.builder.position_at_end(body_bb);
-        self.gen_expr_body(&while_expr.body);
+        let body_val = self.gen_expr_body(&while_expr.body);
+
+        // If the body produced a value, store it so the loop can return the
+        // last iteration value, matching `for` semantics.
+        let result_alloca = if let Some(ref bv) = body_val {
+            let alloca = self.create_entry_block_alloca(func, "while.result", bv.get_type());
+            self.builder.build_store(alloca, *bv).unwrap();
+            Some(alloca)
+        } else {
+            None
+        };
         if self.builder.get_insert_block().unwrap().get_terminator().is_none() {
             self.builder.build_unconditional_branch(cond_bb).unwrap();
         }
 
         self.builder.position_at_end(merge_bb);
-        None
+
+        if let (Some(alloca), Some(bv)) = (result_alloca, body_val) {
+            let result = self
+                .builder
+                .build_load(bv.get_type(), alloca, "while.result.load")
+                .unwrap();
+            Some(result)
+        } else {
+            None
+        }
     }
 
     // ── For expression ───────────────────────────────────────────
@@ -813,7 +832,18 @@ impl<'ctx> CodegenContext<'ctx> {
             parser::tokens::Position::new(0, 0),
         );
 
-        self.gen_expr_body(&for_expr.body);
+        let body_val = self.gen_expr_body(&for_expr.body);
+
+        // If the body produced a value, store it into a result alloca so we
+        // can read it after the loop exits. This lets `for` return the last
+        // body expression value per the HULK spec.
+        let result_alloca = if let Some(ref bv) = body_val {
+            let alloca = self.create_entry_block_alloca(func, "for.result", bv.get_type());
+            self.builder.build_store(alloca, *bv).unwrap();
+            Some(alloca)
+        } else {
+            None
+        };
 
         self.symbols.pop_scope();
         self.pop_scope();
@@ -823,7 +853,18 @@ impl<'ctx> CodegenContext<'ctx> {
         }
 
         self.builder.position_at_end(merge_bb);
-        None
+
+        // Return the last body value via the result alloca (written on every
+        // iteration). Per the HULK spec, the type of `for` is the body type.
+        if let (Some(alloca), Some(bv)) = (result_alloca, body_val) {
+            let result = self
+                .builder
+                .build_load(bv.get_type(), alloca, "for.result.load")
+                .unwrap();
+            Some(result)
+        } else {
+            None
+        }
     }
 
     // ── Assignment ───────────────────────────────────────────────

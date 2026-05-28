@@ -1,12 +1,14 @@
 //! Semantic analysis module for the HULK compiler.
 //!
-//! This module implements three analysis passes (all run after parsing):
+//! This module implements four analysis passes (all run after parsing):
 //!
 //! 1. **Collector** ([`collector`]) — registers all top-level class and
 //!    function declarations in the symbol table.
 //! 2. **Semantic checker** ([`semantic_checker`]) — validates scoping,
 //!    name resolution, arity, and structural rules.
-//! 3. **Type checker** ([`type_checker`]) — infers expression types and
+//! 3. **Type inferer** ([`type_inferer`]) — infers types for unannotated
+//!    symbols (parameters, attributes) from usage constraints.
+//! 4. **Type checker** ([`type_checker`]) — infers expression types and
 //!    verifies type conformance across the entire program.
 
 pub mod types;
@@ -14,6 +16,7 @@ pub mod errors;
 pub mod symbol_table;
 pub mod collector;
 pub mod semantic_checker;
+pub mod type_inferer;
 pub mod type_checker;
 
 pub use types::HulkType;
@@ -58,10 +61,11 @@ impl AnalysisResult {
 /// Pipeline:
 /// 1. Collect declarations → populate symbol table
 /// 2. Semantic check → validate scoping, resolution, arity
-/// 3. Type check → infer and verify types
+/// 3. Type inference → infer types for unannotated symbols
+/// 4. Type check → verify all types are consistent
 ///
 /// Each pass accumulates errors independently.  If pass 1 produces
-/// errors, passes 2 and 3 are still run (for maximum error reporting),
+/// errors, passes 2–4 are still run (for maximum error reporting),
 /// but the final result will contain all accumulated diagnostics.
 pub fn analyze(program: &ast::Program) -> AnalysisResult {
     let mut symbols = SymbolTable::new();
@@ -77,9 +81,11 @@ pub fn analyze(program: &ast::Program) -> AnalysisResult {
         let sem_errors = semantic_checker::check_semantics(program, &mut symbols);
         diagnostics.extend(sem_errors);
 
-        // Pass 3: Type check — always run even if there are semantic errors,
-        // so that type mismatches (e.g. `let x: Number = "hello"`) are
-        // reported alongside resolution errors.
+        // Pass 3: Type inference — assign types to unannotated symbols.
+        let infer_errors = type_inferer::infer_types(program, &mut symbols);
+        diagnostics.extend(infer_errors);
+
+        // Pass 4: Type check — verify all types are consistent.
         let type_errors = type_checker::check_types(program, &mut symbols);
         diagnostics.extend(type_errors);
     }
