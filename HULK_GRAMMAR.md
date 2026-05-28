@@ -19,7 +19,7 @@ ID       := [a-zA-Z_][a-zA-Z0-9_]*
 
 ```
 let  in  if  elif  else  while  for  case  of
-new  class  is  function  true  false
+new  type  is  as  inherits  function  true  false
 ```
 
 ### Operadores y puntuación
@@ -31,7 +31,7 @@ new  class  is  function  true  false
 @  @@                                    // Concatenación de strings
 :=                                       // Asignación destructiva
 =                                        // Inicialización
-->                                       // Flecha (cuerpo inline)
+=>                                       // Flecha (cuerpo inline)
 ;  ,  :  .                               // Puntuación
 (  )  {  }  [  ]                         // Agrupación
 ```
@@ -52,7 +52,7 @@ globales, seguida opcionalmente de una expresión terminada en `;`.
 ## 3. Clases
 
 ```
-<class> := "class" ID [ "(" <params> ")" ] [ "is" ID [ "(" <args> ")" ] ]
+<class> := "type" ID [ "(" <params> ")" ] [ ( "inherits" | "is" ) ID [ "(" <args> ")" ] ]
            "{" <attr>* <method>* "}"
 ```
 
@@ -97,7 +97,7 @@ globales, seguida opcionalmente de una expresión terminada en `;`.
 ## 5. Cuerpo (body) — compartido por funciones y métodos
 
 ```
-<body> := "->" <expr> ";"
+<body> := "=>" <expr> ";"
         | "{" ( <expr> ";" )+ "}"
 ```
 
@@ -120,11 +120,12 @@ se evalúen últimos.
 <expr> := <let-expr>
         | <if-expr>
         | <while-expr>
+        | <for-expr>
         | <case-expr>
         | <assign-expr>
 ```
 
-> **Nota:** `let`, `if`, `while`, `case` y la asignación destructiva tienen la menor
+> **Nota:** `let`, `if`, `while`, `for`, `case` y la asignación destructiva tienen la menor
 > precedencia y no son asociativos (no se pueden anidar sin paréntesis como operandos
 > de operadores binarios).
 
@@ -156,23 +157,30 @@ se evalúen últimos.
 
 ```
 <while-expr> := "while" "(" <expr> ")" <expr-body>
-                [ "else" <expr-body> ]
 ```
 
 ---
 
-### 6.4. Expresión `case` (pattern matching por tipo)
+### 6.4. Expresión `for`
+
+```
+<for-expr> := "for" "(" ID "in" <expr> ")" <expr-body>
+```
+
+---
+
+### 6.5. Expresión `case` (pattern matching por tipo)
 
 ```
 <case-expr> := "case" <expr> "of" <case-branches>
 
-<case-branches> := ID ":" ID "->" <expr-body>
-                 | "{" ( ID ":" ID "->" <expr-body> ";" )* "}"
+<case-branches> := ID ":" ID "=>" <expr-body>
+                 | "{" ( ID ":" ID "=>" <expr-body> ";" )* "}"
 ```
 
 ---
 
-### 6.5. Asignación destructiva
+### 6.6. Asignación destructiva
 
 ```
 <assign-expr> := <or-expr> ":=" <assign-expr>       // Asociativa a la derecha
@@ -196,13 +204,15 @@ Nivel   Operadores              Asociatividad   Nombre de producción
   2     &                       izquierda       <and-expr>
   3     == !=                   izquierda       <equality-expr>
   4     < <= > >=               izquierda       <comparison-expr>
-  5     @ @@                    izquierda       <concat-expr>
-  6     + -                     izquierda       <additive-expr>
-  7     * / %                   izquierda       <multiplicative-expr>
-  8     ^                       derecha         <power-expr>
-  9     - (unario)  !           —  (prefijo)    <unary-expr>
- 10     . [] ()                 izquierda       <postfix-expr>
- 11     new / literales / ID    —               <primary-expr>
+  5     is                      —               <type-test-expr>
+  6     as                      izquierda       <cast-expr>
+  7     @ @@                    izquierda       <concat-expr>
+  8     + -                     izquierda       <additive-expr>
+  9     * / %                   izquierda       <multiplicative-expr>
+ 10     ^                       derecha         <power-expr>
+ 11     - (unario)  !           —  (prefijo)    <unary-expr>
+ 12     . [] ()                 izquierda       <postfix-expr>
+ 13     new / literales / ID    —               <primary-expr>
 ```
 
 ---
@@ -231,32 +241,46 @@ Nivel   Operadores              Asociatividad   Nombre de producción
 ### 7.4. Comparación — Nivel 4
 
 ```
-<comparison-expr> := <comparison-expr> ( "<" | "<=" | ">" | ">=" ) <concat-expr>
-                   | <concat-expr>
+<comparison-expr> := <comparison-expr> ( "<" | "<=" | ">" | ">=" ) <type-test-expr>
+                   | <type-test-expr>
 ```
 
-### 7.5. Concatenación de strings — Nivel 5
+### 7.5. Type test (`is`) — Nivel 5 (no asociativo)
+
+```
+<type-test-expr> := <cast-expr> "is" ID
+                  | <cast-expr>
+```
+
+### 7.6. Type cast (`as`) — Nivel 6
+
+```
+<cast-expr> := <cast-expr> "as" ID
+             | <concat-expr>
+```
+
+### 7.7. Concatenación de strings — Nivel 7
 
 ```
 <concat-expr> := <concat-expr> ( "@" | "@@" ) <additive-expr>
                | <additive-expr>
 ```
 
-### 7.6. Suma y resta — Nivel 6
+### 7.8. Suma y resta — Nivel 8
 
 ```
 <additive-expr> := <additive-expr> ( "+" | "-" ) <multiplicative-expr>
                  | <multiplicative-expr>
 ```
 
-### 7.7. Multiplicación, división, módulo — Nivel 7
+### 7.9. Multiplicación, división, módulo — Nivel 9
 
 ```
 <multiplicative-expr> := <multiplicative-expr> ( "*" | "/" | "%" ) <power-expr>
                        | <power-expr>
 ```
 
-### 7.8. Potencia — Nivel 8 (asociativa a la derecha)
+### 7.10. Potencia — Nivel 10 (asociativa a la derecha)
 
 ```
 <power-expr> := <unary-expr> "^" <power-expr>
@@ -265,7 +289,7 @@ Nivel   Operadores              Asociatividad   Nombre de producción
 
 > `2 ^ 3 ^ 2` se evalúa como `2 ^ (3 ^ 2) = 512`, no `(2 ^ 3) ^ 2 = 64`.
 
-### 7.9. Operadores unarios prefijo — Nivel 9
+### 7.11. Operadores unarios prefijo — Nivel 11
 
 ```
 <unary-expr> := "-" <unary-expr>
@@ -273,7 +297,7 @@ Nivel   Operadores              Asociatividad   Nombre de producción
               | <postfix-expr>
 ```
 
-### 7.10. Operadores postfijo (acceso, indexación, llamada) — Nivel 10
+### 7.12. Operadores postfijo (acceso, indexación, llamada) — Nivel 12
 
 ```
 <postfix-expr> := <postfix-expr> "." ID [ "(" <args> ")" ]     // Acceso a miembro / llamada a método
@@ -283,7 +307,7 @@ Nivel   Operadores              Asociatividad   Nombre de producción
 
 ---
 
-## 8. Expresiones primarias — Nivel 11
+## 8. Expresiones primarias — Nivel 13
 
 ```
 <primary-expr> := NUMBER
@@ -297,8 +321,9 @@ Nivel   Operadores              Asociatividad   Nombre de producción
 ### 8.1. Expresión `new` (instanciación y arrays)
 
 ```
-<new-expr> := "new" ID "(" <args> ")"                              // Instanciación de clase
-            | "new" [ ID ] "[" <expr> "]" [ "{" ID "->" <expr> "}" ] // Creación de array
+<new-expr> := "new" ID "(" <args> ")"         // Instanciación de clase
+            | "new" ID "[" <expr> "]"         // Creación de array tipado
+            | "new" "[" <expr> "]"            // Creación de array no tipado
 ```
 
 ---
@@ -307,19 +332,21 @@ Nivel   Operadores              Asociatividad   Nombre de producción
 
 | Prec. | Operador(es)                          | Aridad   | Asociatividad |
 |-------|---------------------------------------|----------|---------------|
-| 1     | `let...in`, `if`, `while`, `case`     | especial | —             |
+| 1     | `let`, `if`, `while`, `for`, `case`   | especial | —             |
 | 2     | `:=`                                  | binario  | derecha       |
 | 3     | `\|`                                  | binario  | izquierda     |
 | 4     | `&`                                   | binario  | izquierda     |
 | 5     | `==`  `!=`                            | binario  | izquierda     |
 | 6     | `<`  `<=`  `>`  `>=`                  | binario  | izquierda     |
-| 7     | `@`  `@@`                             | binario  | izquierda     |
-| 8     | `+`  `-`                              | binario  | izquierda     |
-| 9     | `*`  `/`  `%`                         | binario  | izquierda     |
-| 10    | `^`                                   | binario  | derecha       |
-| 11    | `-` (unario)  `!`                     | prefijo  | —             |
-| 12    | `.`  `[]`  `()`                       | postfijo | izquierda     |
-| 13    | literales, `ID`, `(expr)`, `new`      | primario | —             |
+| 7     | `is`                                  | binario  | —             |
+| 8     | `as`                                  | binario  | izquierda     |
+| 9     | `@`  `@@`                             | binario  | izquierda     |
+| 10    | `+`  `-`                              | binario  | izquierda     |
+| 11    | `*`  `/`  `%`                         | binario  | izquierda     |
+| 12    | `^`                                   | binario  | derecha       |
+| 13    | `-` (unario)  `!`                     | prefijo  | —             |
+| 14    | `.`  `[]`  `()`                       | postfijo | izquierda     |
+| 15    | literales, `ID`, `(expr)`, `new`      | primario | —             |
 
 ---
 
@@ -330,12 +357,14 @@ Nivel   Operadores              Asociatividad   Nombre de producción
 Cada nivel de precedencia se convierte en una regla lalrpop independiente:
 
 ```
-pub Expr       = { LetExpr, IfExpr, WhileExpr, CaseExpr, AssignExpr }
+pub Expr       = { LetExpr, IfExpr, WhileExpr, ForExpr, CaseExpr, AssignExpr }
 AssignExpr     = { <OrExpr> ":=" <AssignExpr>, OrExpr }
 OrExpr         = { <OrExpr> "|" <AndExpr>, AndExpr }
 AndExpr        = { <AndExpr> "&" <EqualityExpr>, EqualityExpr }
 EqualityExpr   = { <EqualityExpr> EqOp <CompExpr>, CompExpr }
-CompExpr       = { <CompExpr> CmpOp <ConcatExpr>, ConcatExpr }
+CompExpr       = { <CompExpr> CmpOp <TypeTestExpr>, TypeTestExpr }
+TypeTestExpr   = { <CastExpr> "is" ID, CastExpr }
+CastExpr       = { <CastExpr> "as" ID, ConcatExpr }
 ConcatExpr     = { <ConcatExpr> CatOp <AddExpr>, AddExpr }
 AddExpr        = { <AddExpr> AddOp <MulExpr>, MulExpr }
 MulExpr        = { <MulExpr> MulOp <PowExpr>, PowExpr }
@@ -362,17 +391,20 @@ PrimaryExpr    = { NUMBER, STRING, BOOLEAN,
    └── Expression         // Nodo raíz de expresiones
        ├── LetExpr        // let ... in ...
        ├── IfExpr         // if / elif / else
-       ├── WhileExpr      // while ... else ...
+       ├── WhileExpr      // while (cond) body
+       ├── ForExpr        // for (var in iter) body
        ├── CaseExpr       // case ... of ...
        ├── AssignExpr     // loc := expr
        ├── BinaryOp       // operadores binarios (+, -, *, /, %, ^, ==, etc.)
        ├── UnaryOp        // operadores unarios (-, !)
+       ├── TypeTest       // expr is Type
+       ├── Cast           // expr as Type
        ├── MemberAccess   // expr.id
        ├── MethodCall     // expr.id(args)
        ├── IndexAccess    // expr[expr]
        ├── FunctionCall   // id(args)
        ├── NewInstance    // new Type(args)
-       ├── NewArray       // new Type?[size] { init? }
+       ├── NewArray       // new Type?[size]
        └── Atom           // Literales (Number, String, Bool) e Identificadores
 ```
 
@@ -381,18 +413,18 @@ PrimaryExpr    = { NUMBER, STRING, BOOLEAN,
 ## 11. Ejemplo completo
 
 ```hulk
-class Point(x: Number, y: Number) {
+type Point(x: Number, y: Number) {
     x: Number = x;
     y: Number = y;
 
-    translate(dx: Number, dy: Number): Point -> new Point(x + dx, y + dy);
+    translate(dx: Number, dy: Number): Point => new Point(x + dx, y + dy);
 
     norm(): Number {
         (x ^ 2 + y ^ 2) ^ 0.5;
     }
 }
 
-function greet(name: String): String -> "Hello " @@ name;
+function greet(name: String): String => "Hello " @@ name;
 
 let p: Point = new Point(3, 4),
     msg: String = greet("world")
