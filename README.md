@@ -37,7 +37,7 @@ HULK-Compiler/
 
 ## Gramática de referencia
 
-Consulta [HULK_GRAMMAR.md](./HULK_GRAMMAR.md) para la gramática completa desambiguada
+Consulta [HULK_GRAMMAR.md](./HULK_GRAMMAR.md) para la gramática completa
 con tabla de precedencia de operadores y clases de nodos AST.
 
 ---
@@ -55,7 +55,7 @@ con tabla de precedencia de operadores y clases de nodos AST.
 
 Escribe un programa en `script.hulk` en la raíz del proyecto.
 
-Ejemplos válidos:
+Ejemplo:
 
 ```hulk
 print("Hello World!");
@@ -67,11 +67,7 @@ print("Hello World!");
 # Compilar el proyecto (sin ejecutar)
 make compile
 
-# Parsear y compilar script.hulk (genera artefactos en build/)
-make parse
-
-# Parsear un archivo diferente
-make parse SCRIPT=otro_archivo.hulk
+make execute
 
 # Ejecutar el binario generado
 make execute SCRIPT=otro_archivo.hulk
@@ -92,11 +88,8 @@ La salida muestra diagnósticos de compilación y el resultado final.
 
 | Target            | Descripción                                              |
 |-------------------|----------------------------------------------------------|
-| `make build`      | Compila el proyecto sin ejecutar                         |
-| `make compile`    | Alias de `make parse`                                    |
-| `make parse`      | Parsea y compila `script.hulk` (o `SCRIPT=...`)         |
-| `make execute`    | Ejecuta el binario generado en `build/`                 |
-| `make test`       | Ejecuta los tests del workspace                          |
+| `make compile`    | Compila el codigo de `script.hulk`                       |
+| `make execute`    | Compila y ejecuta el codigo de `script.hulk`             |
 | `make clean`      | Limpia artefactos de build (cargo clean)                 |
 
 ---
@@ -109,4 +102,4 @@ La salida muestra diagnósticos de compilación y el resultado final.
 4. **Agrega las reglas** en `src/parser/src/grammar.lalrpop`.
 5. **Actualiza semántica y/o codegen** en `src/parser/src/semantic/` y `src/codegen/`.
 6. **Compila** con `make build` — LALRPOP generará el parser automáticamente.
-7. **Prueba** editando `script.hulk` y ejecutando `make parse` o `make execute`.
+7. **Prueba** editando `script.hulk` y ejecutando `make compile` o `make execute`.

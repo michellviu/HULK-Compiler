@@ -52,7 +52,7 @@ globales, seguida opcionalmente de una expresión terminada en `;`.
 ## 3. Clases
 
 ```
-<class> := "type" ID [ "(" <params> ")" ] [ ( "inherits" | "is" ) ID [ "(" <args> ")" ] ]
+<class> := "type" ID [ "(" <params> ")" ] [ ( "inherits" ) ID [ "(" <args> ")" ] ]
            "{" <attr>* <method>* "}"
 ```
 
@@ -165,17 +165,6 @@ se evalúen últimos.
 
 ```
 <for-expr> := "for" "(" ID "in" <expr> ")" <expr-body>
-```
-
----
-
-### 6.5. Expresión `case` (pattern matching por tipo)
-
-```
-<case-expr> := "case" <expr> "of" <case-branches>
-
-<case-branches> := ID ":" ID "=>" <expr-body>
-                 | "{" ( ID ":" ID "=>" <expr-body> ";" )* "}"
 ```
 
 ---
@@ -377,35 +366,6 @@ PrimaryExpr    = { NUMBER, STRING, BOOLEAN,
                    ID [ "(" Args ")" ],
                    "(" Expr ")",
                    NewExpr }
-```
-
-### Clases de nodos AST sugeridas
-
-```
-── Program
-   ├── ClassDecl          // Declaración de clase
-   │   ├── Param          // Parámetro con tipo opcional
-   │   ├── Attribute       // Atributo con inicialización
-   │   └── Method         // Método
-   ├── FunctionDecl       // Declaración de función global
-   └── Expression         // Nodo raíz de expresiones
-       ├── LetExpr        // let ... in ...
-       ├── IfExpr         // if / elif / else
-       ├── WhileExpr      // while (cond) body
-       ├── ForExpr        // for (var in iter) body
-       ├── CaseExpr       // case ... of ...
-       ├── AssignExpr     // loc := expr
-       ├── BinaryOp       // operadores binarios (+, -, *, /, %, ^, ==, etc.)
-       ├── UnaryOp        // operadores unarios (-, !)
-       ├── TypeTest       // expr is Type
-       ├── Cast           // expr as Type
-       ├── MemberAccess   // expr.id
-       ├── MethodCall     // expr.id(args)
-       ├── IndexAccess    // expr[expr]
-       ├── FunctionCall   // id(args)
-       ├── NewInstance    // new Type(args)
-       ├── NewArray       // new Type?[size]
-       └── Atom           // Literales (Number, String, Bool) e Identificadores
 ```
 
 ---
