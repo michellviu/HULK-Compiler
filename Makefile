@@ -17,6 +17,8 @@ SCRIPT_STEM = $(basename $(SCRIPT_NAME))
 build:
 	@echo "Compilando el proyecto..."
 	@cargo build
+	@cp target/debug/hulk_compiler ./hulk
+	@echo "Compilador disponible en ./hulk"
 
 parse:
 	@if [ ! -f $(SCRIPT) ]; then echo "ERROR: Falta $(SCRIPT) en el directorio actual." && exit 1; fi

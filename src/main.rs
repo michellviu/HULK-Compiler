@@ -77,12 +77,9 @@ fn main() {
     }
 
     // ── Phase 5: Code generation ──────────────────────────────────
-    let output_name = Path::new(&script_path)
-        .file_stem()
-        .unwrap()
-        .to_str()
-        .unwrap();
-    let output_path = Path::new(output_name);
+    // Output binary is always named "output" per the grading interface contract.
+    // See: https://github.com/matcom/compilers/blob/main/docs/interface.md
+    let output_path = Path::new("output");
 
     // Find runtime relative to the executable or in standard locations.
     let runtime_path = find_runtime();
