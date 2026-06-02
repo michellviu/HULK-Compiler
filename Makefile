@@ -24,10 +24,6 @@ parse:
 	@echo "Parseando '$(SCRIPT)' y generando artefactos en '$(BUILD_DIR)/'..."
 	@cd $(BUILD_DIR) && cargo run --manifest-path ../Cargo.toml -- ../$(SCRIPT)
 
-test:
-	@echo "Ejecutando tests..."
-	@cargo test
-
 compile: parse
 
 execute: parse

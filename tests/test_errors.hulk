@@ -4,7 +4,7 @@ type Animal {
     greet(): String => "Hello, I am " @@ self.name;
 }
 
-type Dog is Animal {
+type Dog inherits Animal {
     breed: String = "mixed";
 
     bark() => "Woof!";

@@ -69,7 +69,6 @@ make compile
 
 make execute
 
-# Ejecutar el binario generado
 make execute SCRIPT=otro_archivo.hulk
 ```
 
@@ -90,6 +89,7 @@ La salida muestra diagnósticos de compilación y el resultado final.
 |-------------------|----------------------------------------------------------|
 | `make compile`    | Compila el codigo de `script.hulk`                       |
 | `make execute`    | Compila y ejecuta el codigo de `script.hulk`             |
+| `make execute SCRIPT=otro_archivo.hulk` | Compila y ejecuta el codigo en la ruta correspondiente |
 | `make clean`      | Limpia artefactos de build (cargo clean)                 |
 
 ---

@@ -1,0 +1,45 @@
+function tan(x) => sin(x) / cos(x);
+
+function cot(x) => 1 / tan(x);
+
+function operate(x, y) {
+    print(x + y);
+    print(x - y);
+    print(x * y);
+    print(x / y);
+}
+
+
+{
+    print(tan(PI) ^ 2 + cot(PI) ^ 2);
+
+    operate(10, 5);
+
+    let number = 42, text = "The meaning of life is" in
+    print(text @@ number);
+
+    let a = 6, b = a * 7 in print(b);
+
+    let a = (let b = 6 in b * 7) in print(a);
+
+    let a = 0 in {
+    print(a);
+    a := 1;
+    print(a);
+    };
+
+    let a = 42, mod = a % 3 in
+    print(
+        if (mod == 0) "Magic"
+        elif (mod % 3 == 1) "Woke"
+        else "Dumb"
+    );
+
+    let a = 10 in while (a >= 0) {
+    print(a);
+    a := a - 1;
+    };
+
+    for (x in range(0, 10)) print(x);
+
+}
