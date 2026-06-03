@@ -44,7 +44,7 @@ pub Program: ast::Program = {
 
 EntryExpr: ast::ExprBody = {
     <e:Expr> ";" => ast::ExprBody::Single(Box::new(e)),
-    "{" <exprs:(<Expr> ";")+> "}" => ast::ExprBody::Block(exprs),
+    "{" <exprs:(<Expr> ";")+> "}" ";"? => ast::ExprBody::Block(exprs),
 };
 
 // ═══════════════════════════════════════════════════════════════════
