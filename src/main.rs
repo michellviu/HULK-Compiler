@@ -22,8 +22,15 @@ fn main() {
         Ok(p) => p,
         Err(syntax_err) => {
             let diagnostic = parser::format_error(&syntax_err, &script_path);
+            let plain = parser::format_plain_error(&syntax_err);
+            eprintln!("{}", plain);
             eprintln!("{}", diagnostic);
-            std::process::exit(1);
+            let exit_code = if parser::error_type(&syntax_err) == "LEXICAL" {
+                1
+            } else {
+                2
+            };
+            std::process::exit(exit_code);
         }
     };
 
@@ -45,6 +52,8 @@ fn main() {
         match diag.severity {
             semantic::Severity::Error => {
                 has_errors = true;
+                let plain = semantic::format_plain_compiler_error(diag, &source);
+                eprintln!("{}", plain);
                 eprint!("{}", formatted);
             }
             semantic::Severity::Warning => {
@@ -65,7 +74,7 @@ fn main() {
                 String::new()
             }
         );
-        std::process::exit(1);
+        std::process::exit(3);
     }
 
     let warning_count = result.warnings().len();

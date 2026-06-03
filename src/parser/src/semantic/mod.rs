@@ -20,7 +20,7 @@ pub mod type_inferer;
 pub mod type_checker;
 
 pub use types::HulkType;
-pub use errors::{CompilerError, format_compiler_error, Severity};
+pub use errors::{CompilerError, format_compiler_error, format_plain_compiler_error, Severity};
 pub use symbol_table::SymbolTable;
 
 use crate::ast;

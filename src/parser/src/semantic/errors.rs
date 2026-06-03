@@ -402,3 +402,9 @@ pub fn format_compiler_error(err: &CompilerError, source: &str, filename: &str) 
 
     out
 }
+
+/// Formats a plain-text diagnostic line for the autograder.
+pub fn format_plain_compiler_error(err: &CompilerError, source: &str) -> String {
+    let (line, col) = offset_to_line_col(source, err.span.start);
+    format!("({},{}) SEMANTIC: {}", line, col, err.message)
+}

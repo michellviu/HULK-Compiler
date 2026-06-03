@@ -32,3 +32,13 @@ pub fn parse_expression(input: &str) -> Result<ast::Expression, SyntaxError> {
 pub fn format_error(err: &SyntaxError, filename: &str) -> String {
     errors::format_syntax_error(err, filename)
 }
+
+/// Formatea un `SyntaxError` como línea de texto plano requerida por el autograder.
+pub fn format_plain_error(err: &SyntaxError) -> String {
+    errors::format_plain_syntax_error(err)
+}
+
+/// Retorna el tipo de error (LEXICAL o SYNTACTIC) esperado por el autograder.
+pub fn error_type(err: &SyntaxError) -> &'static str {
+    errors::syntax_error_type(err)
+}

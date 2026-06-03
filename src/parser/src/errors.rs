@@ -383,6 +383,25 @@ pub fn format_syntax_error(err: &SyntaxError, filename: &str) -> String {
     out
 }
 
+/// Returns the error type expected by the autograder for a syntax error.
+pub fn syntax_error_type(err: &SyntaxError) -> &'static str {
+    match err.kind {
+        SyntaxErrorKind::InvalidToken => "LEXICAL",
+        _ => "SYNTACTIC",
+    }
+}
+
+/// Formats a plain-text diagnostic line for the autograder.
+pub fn format_plain_syntax_error(err: &SyntaxError) -> String {
+    format!(
+        "({},{}) {}: {}",
+        err.location.line,
+        err.location.column,
+        syntax_error_type(err),
+        err.kind
+    )
+}
+
 /// Función de conveniencia: parsea un error de lalrpop y devuelve el
 /// diagnóstico formateado completo.
 pub fn format_parse_error<'input>(
